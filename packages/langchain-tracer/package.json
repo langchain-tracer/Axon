@@ -1,0 +1,35 @@
+{
+  "name": "@agent-trace/langchain-tracer",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "dev": "vite build --watch",
+    "build": "vite build && tsc --emitDeclarationOnly",
+    "test": "vitest",
+    "test:ui": "vitest --ui"
+  },
+  "dependencies": {
+    "@langchain/core": "^0.2.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "vite": "^5.0.0",
+    "vitest": "^1.0.0",
+    "typescript": "^5.3.3"
+  },
+  "peerDependencies": {
+    "@langchain/core": "^0.2.0"
+  }
+}

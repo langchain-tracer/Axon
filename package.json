@@ -1,0 +1,26 @@
+{
+  "name": "agent-trace-visualizer",
+  "private": true,
+  "version": "1.0.0",
+  "workspaces": [
+    "packages/*",
+    "backend",
+    "dashboard"
+  ],
+  "scripts": {
+    "dev": "concurrently \"npm run dev:backend\" \"npm run dev:dashboard\"",
+    "dev:backend": "npm run dev --workspace=backend",
+    "dev:dashboard": "npm run dev --workspace=dashboard",
+    "dev:tracer": "npm run dev --workspace=@agent-trace/langchain-tracer",
+    "build": "npm run build --workspaces",
+    "build:tracer": "npm run build --workspace=@agent-trace/langchain-tracer",
+    "build:backend": "npm run build --workspace=backend",
+    "build:dashboard": "npm run build --workspace=dashboard",
+    "test": "npm run test --workspaces --if-present",
+    "clean": "rm -rf node_modules packages/*/node_modules backend/node_modules dashboard/node_modules packages/*/dist backend/dist dashboard/dist"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2",
+    "typescript": "^5.3.3"
+  }
+}
