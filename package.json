@@ -8,7 +8,6 @@
     "dashboard"
   ],
   "scripts": {
-    "db:init": "tsx backend/initdb.ts",
     "dev": "concurrently \"npm run dev:backend\" \"npm run dev:dashboard\"",
     "dev:backend": "npm run dev --workspace=backend",
     "dev:dashboard": "npm run dev --workspace=dashboard",
