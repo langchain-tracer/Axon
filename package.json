@@ -8,6 +8,7 @@
     "dashboard"
   ],
   "scripts": {
+    "db:init": "tsx backend/initdb.ts",
     "dev": "concurrently \"npm run dev:backend\" \"npm run dev:dashboard\"",
     "dev:backend": "npm run dev --workspace=backend",
     "dev:dashboard": "npm run dev --workspace=dashboard",
@@ -22,5 +23,9 @@
   "devDependencies": {
     "concurrently": "^8.2.2",
     "typescript": "^5.3.3"
+  },
+  "dependencies": {
+    "sqlite": "^5.1.1",
+    "sqlite3": "^5.1.7"
   }
 }
