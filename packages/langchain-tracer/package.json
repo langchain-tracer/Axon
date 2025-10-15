@@ -1,35 +1,64 @@
 {
   "name": "@agent-trace/langchain-tracer",
-  "version": "1.0.0",
+  "version": "0.1.0",
+  "description": "LangChain tracing callback handler for Agent Trace Visualizer",
   "type": "module",
-  "main": "./dist/index.js",
-  "module": "./dist/index.js",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.mjs",
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
-      "import": "./dist/index.js",
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.cjs",
       "types": "./dist/index.d.ts"
     }
   },
   "files": [
-    "dist"
+    "dist",
+    "README.md"
   ],
   "scripts": {
     "dev": "vite build --watch",
-    "build": "vite build && tsc --emitDeclarationOnly",
-    "test": "vitest",
-    "test:ui": "vitest --ui"
+    "build": "vite build",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "lint": "eslint src --ext .ts",
+    "type-check": "tsc --noEmit",
+    "clean": "rm -rf dist"
   },
-  "dependencies": {
-    "@langchain/core": "^0.2.0"
-  },
-  "devDependencies": {
-    "@types/node": "^20.10.0",
-    "vite": "^5.0.0",
-    "vitest": "^1.0.0",
-    "typescript": "^5.3.3"
+  "keywords": [
+    "langchain",
+    "tracing",
+    "observability",
+    "debugging",
+    "ai",
+    "agents",
+    "monitoring"
+  ],
+  "author": "Your Name",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yourusername/agent-trace-visualizer"
   },
   "peerDependencies": {
-    "@langchain/core": "^0.2.0"
+    "@langchain/core": ">=0.1.0"
+  },
+  "dependencies": {
+    "socket.io-client": "^4.7.0",
+    "uuid": "^9.0.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@types/uuid": "^9.0.8",
+    "@typescript-eslint/eslint-plugin": "^7.0.0",
+    "@typescript-eslint/parser": "^7.0.0",
+    "@vitest/coverage-v8": "^1.2.0",
+    "eslint": "^8.56.0",
+    "typescript": "^5.3.0",
+    "vite": "^5.0.0",
+    "vite-plugin-dts": "^3.7.0",
+    "vitest": "^1.2.0"
   }
 }

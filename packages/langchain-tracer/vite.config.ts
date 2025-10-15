@@ -1,29 +1,52 @@
 import { defineConfig } from 'vite';
 import { resolve } from 'path';
+import dts from 'vite-plugin-dts';
 
 export default defineConfig({
   build: {
     lib: {
       entry: resolve(__dirname, 'src/index.ts'),
-      name: 'AgentTracer',
-      formats: ['es'],
-      fileName: 'index'
+      name: 'AgentTraceLangchain',
+      formats: ['es', 'cjs'],
+      fileName: (format) => `index.${format === 'es' ? 'mjs' : 'cjs'}`
     },
     rollupOptions: {
-      external: ['@langchain/core'],
+      // Externalize dependencies that shouldn't be bundled
+      external: [
+        '@langchain/core',
+        'socket.io-client',
+        'uuid'
+      ],
       output: {
-        preserveModules: false
+        globals: {
+          '@langchain/core': 'LangChainCore',
+          'socket.io-client': 'io',
+          'uuid': 'uuid'
+        }
       }
     },
     sourcemap: true,
-    target: 'esnext'
+    minify: false
   },
+  plugins: [
+    dts({
+      insertTypesEntry: true,
+      include: ['src/**/*'],
+      exclude: ['src/**/*.test.ts', 'src/**/*.spec.ts']
+    })
+  ],
   test: {
     globals: true,
     environment: 'node',
     coverage: {
       provider: 'v8',
-      reporter: ['text', 'json', 'html']
+      reporter: ['text', 'json', 'html'],
+      exclude: [
+        'node_modules/',
+        'dist/',
+        '**/*.test.ts',
+        '**/*.spec.ts'
+      ]
     }
   }
 });

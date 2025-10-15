@@ -1,4 +1,19 @@
-import React from "react";
+import React, { useState, useMemo } from "react";
+import {
+  DollarSign,
+  Clock,
+  Zap,
+  TrendingUp,
+  Play,
+  Network,
+  X,
+  Edit,
+  AlertCircle,
+  Maximize2,
+  Minimize2,
+  ChevronRight
+} from "lucide-react";
+
 import {
   BarChart,
   Bar,
@@ -15,76 +30,42 @@ import {
   Legend
 } from "recharts";
 
-import {
-  DollarSign,
-  Clock,
-  Zap,
-  TrendingUp,
-  AlertTriangle
-} from "lucide-react";
-
-// ============================================================================
-// TYPES (matching main component)
-// ============================================================================
-
-interface TraceNodeData {
-  label: string;
-  type: "llm" | "tool" | "decision";
-  cost: number;
-  tokens?: { input: number; output: number };
-  latency: number;
-  status: "complete" | "running" | "error" | "pending";
-  timestamp: number;
-}
-
-interface Node {
-  id: string;
-  data: TraceNodeData;
-}
-
 // ============================================================================
 // TIMELINE VIEW COMPONENT
 // ============================================================================
 
-export const TimelineView: React.FC<{ nodes: Node[] }> = ({ nodes }) => {
+export const TimelineView = ({ nodes }) => {
   // Sort nodes by timestamp
-  const sortedNodes = [...nodes].sort(
-    (a, b) => a.data.timestamp - b.data.timestamp
-  );
+  const sortedNodes = [...nodes].sort((a, b) => a.timestamp - b.timestamp);
 
   // Calculate relative timestamps
-  const startTime = sortedNodes[0]?.data.timestamp || 0;
+  const startTime = sortedNodes[0]?.timestamp || 0;
+  const endTime = sortedNodes[sortedNodes.length - 1]?.timestamp || 0;
+  const totalDuration = ((endTime - startTime) / 1000).toFixed(1);
+
   const timeline = sortedNodes.map((node, index) => {
-    const relativeTime = ((node.data.timestamp - startTime) / 1000).toFixed(1);
-    const duration = (node.data.latency / 1000).toFixed(1);
+    const relativeTime = ((node.timestamp - startTime) / 1000).toFixed(1);
+    const duration = (node.latency / 1000).toFixed(1);
     const nextNode = sortedNodes[index + 1];
     const gap = nextNode
-      ? (
-          (nextNode.data.timestamp - node.data.timestamp - node.data.latency) /
-          1000
-        ).toFixed(1)
+      ? ((nextNode.timestamp - node.timestamp - node.latency) / 1000).toFixed(1)
       : "0";
 
     return { node, relativeTime, duration, gap };
   });
 
   return (
-    <div className="p-6 space-y-4">
+    <div className="p-6 space-y-4 overflow-y-auto h-full">
       <div className="flex items-center justify-between mb-6">
         <h2 className="text-2xl font-bold">Timeline View</h2>
         <div className="text-sm text-slate-400">
-          Total Duration:{" "}
-          {(
-            (sortedNodes[sortedNodes.length - 1]?.data.timestamp - startTime) /
-            1000
-          ).toFixed(1)}
-          s
+          Total Duration: {totalDuration}s
         </div>
       </div>
 
       {/* Timeline */}
       <div className="space-y-2">
-        {timeline.map(({ node, relativeTime, duration, gap }, index) => (
+        {timeline.map(({ node, relativeTime, duration, gap }) => (
           <div key={node.id}>
             {/* Node row */}
             <div className="flex items-center gap-4">
@@ -96,9 +77,9 @@ export const TimelineView: React.FC<{ nodes: Node[] }> = ({ nodes }) => {
               {/* Type indicator */}
               <div
                 className={`w-3 h-3 rounded-full ${
-                  node.data.type === "llm"
+                  node.type === "llm"
                     ? "bg-blue-500"
-                    : node.data.type === "tool"
+                    : node.type === "tool"
                     ? "bg-green-500"
                     : "bg-purple-500"
                 }`}
@@ -108,17 +89,17 @@ export const TimelineView: React.FC<{ nodes: Node[] }> = ({ nodes }) => {
               <div className="flex-1 bg-slate-800 rounded-lg p-4 hover:bg-slate-700 transition-colors cursor-pointer">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
-                    <div className="font-bold">{node.data.label}</div>
+                    <div className="font-bold">{node.label}</div>
                     <div
                       className={`text-xs px-2 py-0.5 rounded ${
-                        node.data.type === "llm"
+                        node.type === "llm"
                           ? "bg-blue-500/20 text-blue-400"
-                          : node.data.type === "tool"
+                          : node.type === "tool"
                           ? "bg-green-500/20 text-green-400"
                           : "bg-purple-500/20 text-purple-400"
                       }`}
                     >
-                      {node.data.type.toUpperCase()}
+                      {node.type.toUpperCase()}
                     </div>
                   </div>
 
@@ -129,12 +110,12 @@ export const TimelineView: React.FC<{ nodes: Node[] }> = ({ nodes }) => {
                     </div>
                     <div className="flex items-center gap-1 text-green-400">
                       <DollarSign className="w-4 h-4" />
-                      <span>${node.data.cost.toFixed(4)}</span>
+                      <span>${node.cost.toFixed(4)}</span>
                     </div>
-                    {node.data.tokens && (
+                    {node.tokens && (
                       <div className="text-slate-400 text-xs">
                         {(
-                          node.data.tokens.input + node.data.tokens.output
+                          node.tokens.input + node.tokens.output
                         ).toLocaleString()}{" "}
                         tokens
                       </div>
@@ -145,7 +126,7 @@ export const TimelineView: React.FC<{ nodes: Node[] }> = ({ nodes }) => {
             </div>
 
             {/* Gap indicator */}
-            {Number(gap) > 0 && (
+            {Number(gap) > 0.1 && (
               <div className="flex items-center gap-4 my-1">
                 <div className="w-20" />
                 <div className="w-3 flex justify-center">
@@ -165,18 +146,17 @@ export const TimelineView: React.FC<{ nodes: Node[] }> = ({ nodes }) => {
 // ANALYTICS VIEW COMPONENT
 // ============================================================================
 
-export const AnalyticsView: React.FC<{ nodes: Node[] }> = ({ nodes }) => {
+export const AnalyticsView = ({ nodes }) => {
   // Calculate statistics
   const stats = {
-    totalCost: nodes.reduce((sum, n) => sum + n.data.cost, 0),
+    totalCost: nodes.reduce((sum, n) => sum + n.cost, 0),
     totalTokens: nodes.reduce(
-      (sum, n) =>
-        sum + ((n.data.tokens?.input || 0) + (n.data.tokens?.output || 0)),
+      (sum, n) => sum + ((n.tokens?.input || 0) + (n.tokens?.output || 0)),
       0
     ),
-    totalLatency: nodes.reduce((sum, n) => sum + n.data.latency, 0),
-    avgCost: nodes.reduce((sum, n) => sum + n.data.cost, 0) / nodes.length,
-    avgLatency: nodes.reduce((sum, n) => sum + n.data.latency, 0) / nodes.length
+    totalLatency: nodes.reduce((sum, n) => sum + n.latency, 0),
+    avgCost: nodes.reduce((sum, n) => sum + n.cost, 0) / nodes.length,
+    avgLatency: nodes.reduce((sum, n) => sum + n.latency, 0) / nodes.length
   };
 
   // Cost by node type
@@ -184,58 +164,58 @@ export const AnalyticsView: React.FC<{ nodes: Node[] }> = ({ nodes }) => {
     {
       type: "LLM Calls",
       cost: nodes
-        .filter((n) => n.data.type === "llm")
-        .reduce((sum, n) => sum + n.data.cost, 0),
-      count: nodes.filter((n) => n.data.type === "llm").length
+        .filter((n) => n.type === "llm")
+        .reduce((sum, n) => sum + n.cost, 0),
+      count: nodes.filter((n) => n.type === "llm").length
     },
     {
       type: "Tool Calls",
       cost: nodes
-        .filter((n) => n.data.type === "tool")
-        .reduce((sum, n) => sum + n.data.cost, 0),
-      count: nodes.filter((n) => n.data.type === "tool").length
+        .filter((n) => n.type === "tool")
+        .reduce((sum, n) => sum + n.cost, 0),
+      count: nodes.filter((n) => n.type === "tool").length
     },
     {
       type: "Decisions",
       cost: nodes
-        .filter((n) => n.data.type === "decision")
-        .reduce((sum, n) => sum + n.data.cost, 0),
-      count: nodes.filter((n) => n.data.type === "decision").length
+        .filter((n) => n.type === "decision")
+        .reduce((sum, n) => sum + n.cost, 0),
+      count: nodes.filter((n) => n.type === "decision").length
     }
   ];
 
   // Top 5 most expensive operations
   const topExpensive = [...nodes]
-    .sort((a, b) => b.data.cost - a.data.cost)
+    .sort((a, b) => b.cost - a.cost)
     .slice(0, 5)
     .map((n) => ({
-      name: n.data.label,
-      cost: n.data.cost,
-      percentage: ((n.data.cost / stats.totalCost) * 100).toFixed(1)
+      name: n.label,
+      cost: n.cost,
+      percentage: ((n.cost / stats.totalCost) * 100).toFixed(1)
     }));
 
   // Token distribution
   const tokenData = nodes
-    .filter((n) => n.data.tokens)
+    .filter((n) => n.tokens)
     .map((n) => ({
-      name: n.data.label,
-      input: n.data.tokens!.input,
-      output: n.data.tokens!.output
+      name: n.label,
+      input: n.tokens.input,
+      output: n.tokens.output
     }));
 
   // Latency over time
   const latencyData = [...nodes]
-    .sort((a, b) => a.data.timestamp - b.data.timestamp)
+    .sort((a, b) => a.timestamp - b.timestamp)
     .map((n, i) => ({
       step: i + 1,
-      latency: n.data.latency / 1000,
-      name: n.data.label
+      latency: n.latency / 1000,
+      name: n.label
     }));
 
   const COLORS = ["#3b82f6", "#10b981", "#a855f7", "#f59e0b", "#ef4444"];
 
   return (
-    <div className="p-6 space-y-8">
+    <div className="p-6 space-y-8 overflow-y-auto h-full">
       <h2 className="text-2xl font-bold mb-6">Cost & Performance Analytics</h2>
 
       {/* Summary Cards */}
@@ -293,7 +273,7 @@ export const AnalyticsView: React.FC<{ nodes: Node[] }> = ({ nodes }) => {
                 cx="50%"
                 cy="50%"
                 outerRadius={100}
-                label={(entry) => `${entry.type}: $${entry.cost.toFixed(2)}`}
+                label={(entry) => `${entry.type}: $${entry.cost.toFixed(4)}`}
               >
                 {costByType.map((entry, index) => (
                   <Cell
@@ -302,7 +282,7 @@ export const AnalyticsView: React.FC<{ nodes: Node[] }> = ({ nodes }) => {
                   />
                 ))}
               </Pie>
-              <Tooltip formatter={(value: number) => `$${value.toFixed(4)}`} />
+              <Tooltip formatter={(value) => `$${value.toFixed(4)}`} />
             </PieChart>
           </ResponsiveContainer>
         </div>
@@ -378,7 +358,7 @@ export const AnalyticsView: React.FC<{ nodes: Node[] }> = ({ nodes }) => {
                 backgroundColor: "#1e293b",
                 border: "1px solid #475569"
               }}
-              formatter={(value: number) => [`${value.toFixed(2)}s`, "Latency"]}
+              formatter={(value) => [`${value.toFixed(2)}s`, "Latency"]}
             />
             <Line
               type="monotone"
@@ -408,7 +388,7 @@ export const AnalyticsView: React.FC<{ nodes: Node[] }> = ({ nodes }) => {
                   reducing output tokens or caching results.
                 </div>
                 <div className="text-green-400 font-semibold mt-1">
-                  Potential savings: ${(stats.totalCost * 0.3).toFixed(2)} (30%)
+                  Potential savings: ${(stats.totalCost * 0.3).toFixed(4)} (30%)
                 </div>
               </div>
 
@@ -455,5 +435,3 @@ export const AnalyticsView: React.FC<{ nodes: Node[] }> = ({ nodes }) => {
     </div>
   );
 };
-
-export default { TimelineView, AnalyticsView };
