@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
+    "db:init": "tsx backend/initdb.ts",
     "dev": "tsx watch src/index.ts",
     "build": "tsc && vite build",
     "start": "node dist/index.js",
