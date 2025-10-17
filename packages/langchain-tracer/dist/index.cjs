@@ -432,43 +432,70 @@ class TraceClient {
   /**
    * Connect to WebSocket server
    */
+  /**
+   * Connect to WebSocket server
+   */
   connect() {
     try {
+      console.log(
+        `[AgentTrace] Attempting connection to ${this.config.endpoint}...`
+      );
       this.socket = socket_ioClient.io(this.config.endpoint, {
         auth: {
           apiKey: this.config.apiKey,
           projectName: this.config.projectName
         },
-        transports: ["websocket"],
+        transports: ["websocket", "polling"],
+        // 👈 Add polling fallback
         reconnection: true,
         reconnectionAttempts: this.maxReconnectAttempts,
-        reconnectionDelay: 1e3
+        reconnectionDelay: 1e3,
+        timeout: 5e3
+        // 👈 Add timeout
       });
       this.socket.on("connect", () => {
+        var _a;
         this.connected = true;
         this.reconnectAttempts = 0;
-        this.log("✅ Connected to trace backend");
+        console.log(`[AgentTrace] ✅ Connected! Socket ID: ${(_a = this.socket) == null ? void 0 : _a.id}`);
         this.flushQueue();
       });
-      this.socket.on("disconnect", () => {
+      this.socket.on("disconnect", (reason) => {
         this.connected = false;
-        this.log("⚠️  Disconnected from trace backend");
+        console.log(`[AgentTrace] ⚠️  Disconnected: ${reason}`);
       });
       this.socket.on("connect_error", (error) => {
         this.reconnectAttempts++;
-        this.log(`❌ Connection error: ${error.message}`);
+        console.error(
+          `[AgentTrace] ❌ Connection error (attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts}):`,
+          error.message
+        );
+        console.error(
+          `[AgentTrace] Trying to connect to: ${this.config.endpoint}`
+        );
         if (this.reconnectAttempts >= this.maxReconnectAttempts) {
-          this.log(
-            "⚠️  Max reconnection attempts reached. Events will be queued."
+          console.error(
+            "[AgentTrace] ⚠️  Max reconnection attempts reached. Events will be queued."
           );
         }
       });
       this.socket.on("error", (error) => {
-        this.log(`❌ Socket error: ${error}`);
+        console.error(`[AgentTrace] ❌ Socket error:`, error);
+      });
+      this.socket.io.on("error", (error) => {
+        console.error(`[AgentTrace] ❌ IO error:`, error);
+      });
+      this.socket.io.on("reconnect_attempt", (attempt) => {
+        console.log(`[AgentTrace] 🔄 Reconnect attempt ${attempt}...`);
+      });
+      this.socket.io.on("reconnect_failed", () => {
+        console.error(
+          `[AgentTrace] ❌ Reconnection failed after ${this.maxReconnectAttempts} attempts`
+        );
       });
       this.startBatchTimer();
     } catch (error) {
-      this.log(`❌ Failed to create socket: ${error}`);
+      console.error(`[AgentTrace] ❌ Failed to create socket:`, error);
     }
   }
   /**
@@ -498,11 +525,19 @@ class TraceClient {
    * Flush queued events to server
    */
   flushQueue() {
+    console.log("flushQueue is running");
     if (this.eventQueue.length === 0) return;
     const events = [...this.eventQueue];
     this.eventQueue = [];
     if (this.connected && this.socket) {
-      this.socket.emit("trace_events", events);
+      this.socket.emit("trace_events", events, (response) => {
+        if (response == null ? void 0 : response.error) {
+          this.log(`❌ Server error: ${response.error}`);
+          this.eventQueue.unshift(...events);
+        } else {
+          this.log(`✅ ${events.length} events acknowledged`);
+        }
+      });
       this.log(`📤 Sent ${events.length} events`);
     } else {
       this.eventQueue.unshift(...events);
@@ -566,6 +601,7 @@ class EventSerializer {
    */
   static serializeSerialized(serialized) {
     var _a;
+    console.log(serialized, "serialized");
     return {
       type: String(serialized.lc || "unknown"),
       name: ((_a = serialized.id) == null ? void 0 : _a[serialized.id.length - 1]) || "unknown",
@@ -628,6 +664,10 @@ class TracingCallbackHandler extends BaseCallbackHandler {
       debug: (config == null ? void 0 : config.debug) || false,
       ...config
     };
+    this.config.metadata = {
+      projectName: this.config.projectName,
+      ...this.config.metadata
+    };
     this.client = new TraceClient(this.config);
     this.traceId = uuid.v4();
     if (this.config.debug) {
@@ -640,6 +680,14 @@ class TracingCallbackHandler extends BaseCallbackHandler {
   async handleLLMStart(llm, prompts, runId, parentRunId, extraParams, tags, metadata) {
     const serialized = EventSerializer.serializeSerialized(llm);
     const model = EventSerializer.extractModelName(llm);
+    console.log(
+      llm,
+      prompts,
+      runId,
+      parentRunId,
+      extraParams,
+      "handleLLMStart parameters"
+    );
     this.runDataMap.set(runId, {
       runId,
       parentRunId,
@@ -668,12 +716,14 @@ class TracingCallbackHandler extends BaseCallbackHandler {
         tags
       }
     };
+    console.log(event, "event\n\n\n\n\n\n\n");
     await this.client.sendEvent(event);
   }
   /**
    * Called when LLM ends running
    */
   async handleLLMEnd(output, runId) {
+    console.log(runId, "runID");
     const runData = this.runDataMap.get(runId);
     if (!runData) {
       console.error(`[AgentTrace] No run data found for ${runId}`);
@@ -705,6 +755,7 @@ class TracingCallbackHandler extends BaseCallbackHandler {
   async handleToolStart(tool, input, runId, parentRunId, tags, metadata) {
     const serialized = EventSerializer.serializeSerialized(tool);
     const toolName = serialized.name;
+    console.log("handleToolStart is running");
     this.runDataMap.set(runId, {
       runId,
       parentRunId,
@@ -765,6 +816,7 @@ class TracingCallbackHandler extends BaseCallbackHandler {
   async handleChainStart(chain, inputs, runId, parentRunId, tags, metadata) {
     const serialized = EventSerializer.serializeSerialized(chain);
     const chainName = serialized.name;
+    console.log(" handleChainStart is running");
     this.runDataMap.set(runId, {
       runId,
       parentRunId,
