@@ -35,10 +35,7 @@ import {
 // ============================================================================
 
 export const TimelineView = ({ nodes }) => {
-  // Sort nodes by timestamp
   const sortedNodes = [...nodes].sort((a, b) => a.timestamp - b.timestamp);
-
-  // Calculate relative timestamps
   const startTime = sortedNodes[0]?.timestamp || 0;
   const endTime = sortedNodes[sortedNodes.length - 1]?.timestamp || 0;
   const totalDuration = ((endTime - startTime) / 1000).toFixed(1);
@@ -63,18 +60,13 @@ export const TimelineView = ({ nodes }) => {
         </div>
       </div>
 
-      {/* Timeline */}
       <div className="space-y-2">
         {timeline.map(({ node, relativeTime, duration, gap }) => (
           <div key={node.id}>
-            {/* Node row */}
             <div className="flex items-center gap-4">
-              {/* Timestamp */}
               <div className="w-20 text-sm text-slate-400 font-mono text-right">
                 {relativeTime}s
               </div>
-
-              {/* Type indicator */}
               <div
                 className={`w-3 h-3 rounded-full ${
                   node.type === "llm"
@@ -84,8 +76,6 @@ export const TimelineView = ({ nodes }) => {
                     : "bg-purple-500"
                 }`}
               />
-
-              {/* Node card */}
               <div className="flex-1 bg-slate-800 rounded-lg p-4 hover:bg-slate-700 transition-colors cursor-pointer">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
@@ -102,7 +92,6 @@ export const TimelineView = ({ nodes }) => {
                       {node.type.toUpperCase()}
                     </div>
                   </div>
-
                   <div className="flex items-center gap-6 text-sm">
                     <div className="flex items-center gap-1 text-slate-400">
                       <Clock className="w-4 h-4" />
@@ -124,8 +113,6 @@ export const TimelineView = ({ nodes }) => {
                 </div>
               </div>
             </div>
-
-            {/* Gap indicator */}
             {Number(gap) > 0.1 && (
               <div className="flex items-center gap-4 my-1">
                 <div className="w-20" />
@@ -147,7 +134,6 @@ export const TimelineView = ({ nodes }) => {
 // ============================================================================
 
 export const AnalyticsView = ({ nodes }) => {
-  // Calculate statistics
   const stats = {
     totalCost: nodes.reduce((sum, n) => sum + n.cost, 0),
     totalTokens: nodes.reduce(
@@ -159,7 +145,6 @@ export const AnalyticsView = ({ nodes }) => {
     avgLatency: nodes.reduce((sum, n) => sum + n.latency, 0) / nodes.length
   };
 
-  // Cost by node type
   const costByType = [
     {
       type: "LLM Calls",
@@ -176,15 +161,14 @@ export const AnalyticsView = ({ nodes }) => {
       count: nodes.filter((n) => n.type === "tool").length
     },
     {
-      type: "Decisions",
+      type: "Chains",
       cost: nodes
-        .filter((n) => n.type === "decision")
+        .filter((n) => n.type === "chain")
         .reduce((sum, n) => sum + n.cost, 0),
-      count: nodes.filter((n) => n.type === "decision").length
+      count: nodes.filter((n) => n.type === "chain").length
     }
   ];
 
-  // Top 5 most expensive operations
   const topExpensive = [...nodes]
     .sort((a, b) => b.cost - a.cost)
     .slice(0, 5)
@@ -194,7 +178,6 @@ export const AnalyticsView = ({ nodes }) => {
       percentage: ((n.cost / stats.totalCost) * 100).toFixed(1)
     }));
 
-  // Token distribution
   const tokenData = nodes
     .filter((n) => n.tokens)
     .map((n) => ({
@@ -203,7 +186,6 @@ export const AnalyticsView = ({ nodes }) => {
       output: n.tokens.output
     }));
 
-  // Latency over time
   const latencyData = [...nodes]
     .sort((a, b) => a.timestamp - b.timestamp)
     .map((n, i) => ({
@@ -218,7 +200,6 @@ export const AnalyticsView = ({ nodes }) => {
     <div className="p-6 space-y-8 overflow-y-auto h-full">
       <h2 className="text-2xl font-bold mb-6">Cost & Performance Analytics</h2>
 
-      {/* Summary Cards */}
       <div className="grid grid-cols-4 gap-4">
         <div className="bg-slate-800 rounded-xl p-6 border border-slate-700">
           <div className="flex items-center gap-3 mb-2">
@@ -229,7 +210,6 @@ export const AnalyticsView = ({ nodes }) => {
             ${stats.totalCost.toFixed(4)}
           </div>
         </div>
-
         <div className="bg-slate-800 rounded-xl p-6 border border-slate-700">
           <div className="flex items-center gap-3 mb-2">
             <TrendingUp className="w-5 h-5 text-blue-400" />
@@ -239,7 +219,6 @@ export const AnalyticsView = ({ nodes }) => {
             {stats.totalTokens.toLocaleString()}
           </div>
         </div>
-
         <div className="bg-slate-800 rounded-xl p-6 border border-slate-700">
           <div className="flex items-center gap-3 mb-2">
             <Clock className="w-5 h-5 text-purple-400" />
@@ -249,7 +228,6 @@ export const AnalyticsView = ({ nodes }) => {
             {(stats.avgLatency / 1000).toFixed(2)}s
           </div>
         </div>
-
         <div className="bg-slate-800 rounded-xl p-6 border border-slate-700">
           <div className="flex items-center gap-3 mb-2">
             <Zap className="w-5 h-5 text-yellow-400" />
@@ -259,9 +237,7 @@ export const AnalyticsView = ({ nodes }) => {
         </div>
       </div>
 
-      {/* Cost Breakdown */}
       <div className="grid grid-cols-2 gap-6">
-        {/* Pie Chart - Cost by Type */}
         <div className="bg-slate-800 rounded-xl p-6 border border-slate-700">
           <h3 className="text-lg font-bold mb-4">Cost Distribution by Type</h3>
           <ResponsiveContainer width="100%" height={300}>
@@ -286,8 +262,6 @@ export const AnalyticsView = ({ nodes }) => {
             </PieChart>
           </ResponsiveContainer>
         </div>
-
-        {/* Bar Chart - Top Expensive Operations */}
         <div className="bg-slate-800 rounded-xl p-6 border border-slate-700">
           <h3 className="text-lg font-bold mb-4">Most Expensive Operations</h3>
           <div className="space-y-3">
@@ -311,7 +285,6 @@ export const AnalyticsView = ({ nodes }) => {
         </div>
       </div>
 
-      {/* Token Usage */}
       {tokenData.length > 0 && (
         <div className="bg-slate-800 rounded-xl p-6 border border-slate-700">
           <h3 className="text-lg font-bold mb-4">Token Usage Distribution</h3>
@@ -334,7 +307,6 @@ export const AnalyticsView = ({ nodes }) => {
         </div>
       )}
 
-      {/* Latency Timeline */}
       <div className="bg-slate-800 rounded-xl p-6 border border-slate-700">
         <h3 className="text-lg font-bold mb-4">Latency Over Time</h3>
         <ResponsiveContainer width="100%" height={300}>
@@ -369,68 +341,6 @@ export const AnalyticsView = ({ nodes }) => {
             />
           </LineChart>
         </ResponsiveContainer>
-      </div>
-
-      {/* Optimization Suggestions */}
-      <div className="bg-blue-900/20 border border-blue-500 rounded-xl p-6">
-        <div className="flex items-start gap-3">
-          <Zap className="w-6 h-6 text-blue-400 flex-shrink-0 mt-1" />
-          <div>
-            <h3 className="text-lg font-bold text-blue-400 mb-2">
-              Optimization Suggestions
-            </h3>
-            <div className="space-y-3 text-sm">
-              <div>
-                <div className="font-semibold mb-1">💰 Cost Optimization</div>
-                <div className="text-slate-300">
-                  {topExpensive[0]?.name} accounts for{" "}
-                  {topExpensive[0]?.percentage}% of total cost. Consider
-                  reducing output tokens or caching results.
-                </div>
-                <div className="text-green-400 font-semibold mt-1">
-                  Potential savings: ${(stats.totalCost * 0.3).toFixed(4)} (30%)
-                </div>
-              </div>
-
-              <div>
-                <div className="font-semibold mb-1">⚡ Performance</div>
-                <div className="text-slate-300">
-                  Average latency is {(stats.avgLatency / 1000).toFixed(2)}s per
-                  operation. Consider parallel execution for independent
-                  operations.
-                </div>
-                <div className="text-green-400 font-semibold mt-1">
-                  Potential speedup: ~40% faster
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Cost Projection */}
-      <div className="bg-slate-800 rounded-xl p-6 border border-slate-700">
-        <h3 className="text-lg font-bold mb-4">Monthly Cost Projection</h3>
-        <div className="grid grid-cols-3 gap-4">
-          <div>
-            <div className="text-sm text-slate-400 mb-1">At 100 runs/day</div>
-            <div className="text-2xl font-bold text-green-400">
-              ${(stats.totalCost * 100 * 30).toFixed(2)}
-            </div>
-          </div>
-          <div>
-            <div className="text-sm text-slate-400 mb-1">At 500 runs/day</div>
-            <div className="text-2xl font-bold text-yellow-400">
-              ${(stats.totalCost * 500 * 30).toFixed(2)}
-            </div>
-          </div>
-          <div>
-            <div className="text-sm text-slate-400 mb-1">At 1000 runs/day</div>
-            <div className="text-2xl font-bold text-red-400">
-              ${(stats.totalCost * 1000 * 30).toFixed(2)}
-            </div>
-          </div>
-        </div>
       </div>
     </div>
   );

@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import {
   DollarSign,
   Clock,
@@ -11,772 +11,433 @@ import {
   AlertCircle,
   Maximize2,
   Minimize2,
-  ChevronRight
+  ChevronRight,
+  List,
+  Activity,
+  Search,
+  RefreshCw,
+  Filter,
+  Wifi,
+  WifiOff
 } from "lucide-react";
-import {
-  BarChart,
-  Bar,
-  XAxis, 
-  YAxis,
-  Tooltip,
-  ResponsiveContainer,
-  PieChart,
-  Pie,
-  Cell,
-  LineChart,
-  Line,
-  CartesianGrid,
-  Legend
-} from "recharts";
 
-import { TimelineView, AnalyticsView } from "./AnalyticsComponents";
+import { AnalyticsView, TimelineView } from "./AnalyticsComponents";
+import { transformTrace } from "../utils/apiAdapter";
 
-const AgentTraceVisualizer = () => {
-  const [viewMode, setViewMode] = useState("graph"); // 'graph', 'timeline', 'analytics'
-  const [selectedNodeId, setSelectedNodeId] = useState(null);
-  const [sidebarView, setSidebarView] = useState("details");
-  const [editedPrompt, setEditedPrompt] = useState("");
-  const [replayResults, setReplayResults] = useState(null);
-  const [zoom, setZoom] = useState(1);
-  const [panOffset, setPanOffset] = useState({ x: 0, y: 0 });
-  const [isDragging, setIsDragging] = useState(false);
-  const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
+// Backend API URL
+const BACKEND_URL = "http://localhost:3000";
 
-  const baseTime = Date.now();
+// Socket.IO client connection
+const createSocketConnection = () => {
+  // Check if io is available (from socket.io-client CDN)
+  if (typeof io === "undefined") {
+    console.warn(
+      'Socket.IO client not loaded. Add this to your HTML: <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>'
+    );
+    return null;
+  }
 
-  const nodes = [
-    {
-      id: "1",
-      label: "Initial Query",
-      type: "llm",
-      cost: 0.0023,
-      tokens: { input: 150, output: 50 },
-      latency: 1200,
-      status: "complete",
-      timestamp: baseTime,
-      prompt: "What is the weather in San Francisco?",
-      response: "I'll check the weather for you.",
-      x: 400,
-      y: 50
+  const socket = io(BACKEND_URL, {
+    auth: {
+      apiKey: "your-api-key",
+      projectName: "dashboard"
     },
-    {
-      id: "2",
-      label: "Weather API Call",
-      type: "tool",
-      cost: 0.0001,
-      latency: 450,
-      status: "complete",
-      timestamp: baseTime + 1200,
-      toolParams: { location: "San Francisco" },
-      x: 200,
-      y: 200
-    },
-    {
-      id: "3",
-      label: "Parse Response",
-      type: "decision",
-      cost: 0.0008,
-      tokens: { input: 200, output: 100 },
-      latency: 800,
-      status: "complete",
-      timestamp: baseTime + 1650,
-      x: 600,
-      y: 200
-    },
-    {
-      id: "4",
-      label: "Format Output",
-      type: "llm",
-      cost: 0.0042,
-      tokens: { input: 300, output: 250 },
-      latency: 1500,
-      status: "complete",
-      timestamp: baseTime + 2450,
-      prompt: "Format the weather data nicely",
-      response: "The weather in San Francisco is 68°F and sunny.",
-      x: 400,
-      y: 350
-    },
-    {
-      id: "5",
-      label: "Save to Cache",
-      type: "tool",
-      cost: 0.0001,
-      latency: 200,
-      status: "running",
-      timestamp: baseTime + 3950,
-      x: 250,
-      y: 500
-    },
-    {
-      id: "6",
-      label: "Log Analytics",
-      type: "tool",
-      cost: 0.0001,
-      latency: 150,
-      status: "pending",
-      timestamp: baseTime + 4150,
-      hasLoop: true,
-      x: 550,
-      y: 500
+    reconnection: true,
+    reconnectionDelay: 1000,
+    reconnectionAttempts: 5
+  });
+
+  return socket;
+};
+
+// ============================================================================
+// MAIN DASHBOARD COMPONENT
+// ============================================================================
+
+const AgentTraceViewer = () => {
+  const [currentView, setCurrentView] = useState("list");
+  const [traces, setTraces] = useState([]);
+  const [selectedTrace, setSelectedTrace] = useState(null);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [filterProject, setFilterProject] = useState("all");
+  const [filterStatus, setFilterStatus] = useState("all");
+  const [isConnected, setIsConnected] = useState(false);
+  const [connectionError, setConnectionError] = useState(null);
+  const [liveUpdates, setLiveUpdates] = useState(0);
+
+  const socketRef = useRef(null);
+
+  useEffect(() => {
+    const socket = createSocketConnection();
+    if (!socket) {
+      setConnectionError("Socket.IO client not available");
+      return;
     }
-  ];
 
-  const edges = [
-    { from: "1", to: "2" },
-    { from: "1", to: "3" },
-    { from: "2", to: "4" },
-    { from: "3", to: "4" },
-    { from: "4", to: "5" },
-    { from: "4", to: "6" }
-  ];
+    socketRef.current = socket;
 
-  const selectedNode = nodes.find((n) => n.id === selectedNodeId);
+    socket.on("connect", () => {
+      console.log("✅ Connected to trace server");
+      setIsConnected(true);
+      setConnectionError(null);
+      fetchTraces();
+    });
 
-  const stats = useMemo(
+    socket.on("disconnect", () => {
+      console.log("❌ Disconnected from trace server");
+      setIsConnected(false);
+    });
+
+    socket.on("connect_error", (error) => {
+      console.error("Connection error:", error);
+      setConnectionError(error.message);
+      setIsConnected(false);
+    });
+
+    socket.on("trace_update", (data) => {
+      console.log("📥 Trace update received:", data);
+      setLiveUpdates((prev) => prev + 1);
+      fetchTraces();
+    });
+
+    socket.on("events_received", (data) => {
+      console.log(`✅ Events received: ${data.count}`);
+    });
+
+    socket.on("error", (error) => {
+      console.error("Socket error:", error);
+      setConnectionError(error.message);
+    });
+
+    return () => {
+      if (socket) {
+        socket.disconnect();
+      }
+    };
+  }, []);
+
+  // In AgentTraceViewer component
+
+  const fetchTraces = async () => {
+    try {
+      const response = await fetch("http://localhost:3000/api/traces");
+      if (!response.ok) throw new Error("Failed to fetch traces");
+
+      const data = await response.json();
+
+      // Transform backend format to frontend format
+      const transformedTraces = data.traces.map(transformTrace);
+
+      setTraces(transformedTraces);
+    } catch (error) {
+      console.error("Error fetching traces:", error);
+      // Fallback to mock data
+      setTraces(generateMockTraces());
+    }
+  };
+
+  const handleRefresh = () => {
+    fetchTraces();
+    setLiveUpdates((prev) => prev + 1);
+  };
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (isConnected) {
+        fetchTraces();
+      }
+    }, 10000);
+
+    return () => clearInterval(interval);
+  }, [isConnected]);
+
+  const projects = useMemo(() => {
+    return [...new Set(traces.map((t) => t.project))];
+  }, [traces]);
+
+  const filteredTraces = useMemo(() => {
+    return traces.filter((trace) => {
+      const matchesSearch =
+        trace.description?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        trace.id.toLowerCase().includes(searchQuery.toLowerCase());
+      const matchesProject =
+        filterProject === "all" || trace.project === filterProject;
+      const matchesStatus =
+        filterStatus === "all" || trace.status === filterStatus;
+
+      return matchesSearch && matchesProject && matchesStatus;
+    });
+  }, [traces, searchQuery, filterProject, filterStatus]);
+
+  const overallStats = useMemo(
     () => ({
-      totalCost: nodes.reduce((sum, n) => sum + n.cost, 0),
-      totalNodes: nodes.length,
-      llmCount: nodes.filter((n) => n.type === "llm").length,
-      toolCount: nodes.filter((n) => n.type === "tool").length,
-      avgLatency: nodes.reduce((sum, n) => sum + n.latency, 0) / nodes.length
+      totalTraces: traces.length,
+      totalCost: traces.reduce((sum, t) => sum + (t.cost || 0), 0),
+      avgLatency:
+        traces.length > 0
+          ? traces.reduce((sum, t) => sum + (t.latency || 0), 0) / traces.length
+          : 0,
+      completedTraces: traces.filter((t) => t.status === "complete").length,
+      runningTraces: traces.filter((t) => t.status === "running").length,
+      failedTraces: traces.filter(
+        (t) => t.status === "error" || t.status === "failed"
+      ).length
     }),
-    [nodes]
+    [traces]
   );
 
-  const getTypeColor = (type) => {
-    switch (type) {
-      case "llm":
-        return {
-          border: "border-blue-500",
-          bg: "bg-blue-500/10",
-          line: "#3b82f6",
-          text: "text-blue-400"
-        };
-      case "tool":
-        return {
-          border: "border-green-500",
-          bg: "bg-green-500/10",
-          line: "#10b981",
-          text: "text-green-400"
-        };
-      case "decision":
-        return {
-          border: "border-purple-500",
-          bg: "bg-purple-500/10",
-          line: "#a855f7",
-          text: "text-purple-400"
-        };
+  const handleTraceClick = (trace) => {
+    setSelectedTrace(trace);
+    setCurrentView("trace");
+  };
+
+  const formatTimestamp = (timestamp) => {
+    const date = new Date(timestamp);
+    const now = new Date();
+    const diff = now - date;
+
+    if (diff < 60000) return "Just now";
+    if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
+    if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`;
+    return date.toLocaleDateString() + " " + date.toLocaleTimeString();
+  };
+
+  const getStatusColor = (status) => {
+    switch (status) {
+      case "complete":
+        return "text-green-400 bg-green-500/20";
+      case "running":
+        return "text-yellow-400 bg-yellow-500/20";
+      case "error":
+      case "failed":
+        return "text-red-400 bg-red-500/20";
       default:
-        return {
-          border: "border-slate-500",
-          bg: "bg-slate-500/10",
-          line: "#64748b",
-          text: "text-slate-400"
-        };
+        return "text-slate-400 bg-slate-500/20";
     }
   };
 
-  const handleReplay = () => {
-    setReplayResults({
-      originalCost: selectedNode.cost,
-      newCost: selectedNode.cost * 0.7,
-      nodesAffected: 5,
-      estimatedTime: 3.2
-    });
-  };
-
-  const handleNodeClick = (node) => {
-    setSelectedNodeId(node.id);
-    setEditedPrompt(node.prompt || "");
-    setSidebarView("details");
-    setReplayResults(null);
-  };
-
-  const handleMouseDown = (e) => {
-    if (e.target.tagName === "svg") {
-      setIsDragging(true);
-      setDragStart({ x: e.clientX - panOffset.x, y: e.clientY - panOffset.y });
-    }
-  };
-
-  const handleMouseMove = (e) => {
-    if (isDragging) {
-      setPanOffset({
-        x: e.clientX - dragStart.x,
-        y: e.clientY - dragStart.y
-      });
-    }
-  };
-
-  const handleMouseUp = () => {
-    setIsDragging(false);
-  };
+  if (currentView === "trace" && selectedTrace) {
+    return (
+      <TraceDetailView
+        trace={selectedTrace}
+        socket={socketRef.current}
+        isConnected={isConnected}
+        onBack={() => {
+          setCurrentView("list");
+          setSelectedTrace(null);
+        }}
+      />
+    );
+  }
 
   return (
     <div className="w-full h-screen bg-slate-950 text-white flex flex-col">
-      {/* Top Bar */}
-      <div className="bg-slate-900 border-b border-slate-700 p-4 flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <Network className="w-6 h-6 text-blue-400" />
-          <h1 className="text-xl font-bold">Agent Trace Visualizer</h1>
-          <div className="flex items-center gap-2 bg-slate-800 px-3 py-1 rounded-lg">
-            <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-            <span className="text-sm">Live</span>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-4">
-          {/* View Mode Tabs */}
-          <div className="flex gap-2">
-            <button
-              onClick={() => setViewMode("graph")}
-              className={`px-3 py-1.5 rounded text-sm font-semibold transition-colors ${
-                viewMode === "graph"
-                  ? "bg-blue-600"
-                  : "bg-slate-800 hover:bg-slate-700"
+      <div className="bg-slate-900 border-b border-slate-700 p-4">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <Network className="w-6 h-6 text-blue-400" />
+            <h1 className="text-xl font-bold">Agent Trace Dashboard</h1>
+            <div
+              className={`flex items-center gap-2 px-3 py-1 rounded-lg ${
+                isConnected
+                  ? "bg-green-900/30 border border-green-500/30"
+                  : "bg-red-900/30 border border-red-500/30"
               }`}
             >
-              Graph
-            </button>
-            <button
-              onClick={() => setViewMode("timeline")}
-              className={`px-3 py-1.5 rounded text-sm font-semibold transition-colors ${
-                viewMode === "timeline"
-                  ? "bg-blue-600"
-                  : "bg-slate-800 hover:bg-slate-700"
-              }`}
-            >
-              Timeline
-            </button>
-            <button
-              onClick={() => setViewMode("analytics")}
-              className={`px-3 py-1.5 rounded text-sm font-semibold transition-colors ${
-                viewMode === "analytics"
-                  ? "bg-blue-600"
-                  : "bg-slate-800 hover:bg-slate-700"
-              }`}
-            >
-              Analytics
-            </button>
-          </div>
-
-          <div className="flex gap-2 text-xs">
-            <div className="flex items-center gap-2 bg-slate-800 px-3 py-2 rounded-lg">
-              <span className="text-slate-400">Nodes:</span>
-              <span className="font-bold">{stats.totalNodes}</span>
-            </div>
-            <div className="flex items-center gap-2 bg-slate-800 px-3 py-2 rounded-lg">
-              <span className="text-slate-400">Latency:</span>
-              <span className="font-bold">
-                {(stats.avgLatency / 1000).toFixed(2)}s
-              </span>
-            </div>
-          </div>
-          <div className="flex items-center gap-2 bg-green-600 px-4 py-2 rounded-lg font-bold">
-            <DollarSign className="w-4 h-4" />
-            <span>${stats.totalCost.toFixed(4)}</span>
-          </div>
-        </div>
-      </div>
-
-      {/* Main Content */}
-      <div className="flex-1 flex overflow-hidden">
-        {viewMode === "timeline" && <TimelineView nodes={nodes} />}
-
-        {viewMode === "analytics" && <AnalyticsView nodes={nodes} />}
-
-        {viewMode === "graph" && (
-          <>
-            {/* Graph View */}
-            <div className="flex-1 relative bg-slate-950 overflow-hidden">
-              {/* Zoom Controls */}
-              <div className="absolute top-4 right-4 z-10 flex gap-2">
-                <button
-                  onClick={() => setZoom(Math.min(zoom + 0.1, 2))}
-                  className="bg-slate-800 border border-slate-700 p-2 rounded hover:bg-slate-700 transition-colors"
-                >
-                  <Maximize2 className="w-4 h-4" />
-                </button>
-                <button
-                  onClick={() => setZoom(Math.max(zoom - 0.1, 0.5))}
-                  className="bg-slate-800 border border-slate-700 p-2 rounded hover:bg-slate-700 transition-colors"
-                >
-                  <Minimize2 className="w-4 h-4" />
-                </button>
-                <button
-                  onClick={() => {
-                    setZoom(1);
-                    setPanOffset({ x: 0, y: 0 });
-                  }}
-                  className="bg-slate-800 border border-slate-700 px-3 py-2 rounded hover:bg-slate-700 text-sm transition-colors"
-                >
-                  Reset
-                </button>
-              </div>
-
-              {/* Anomaly Alert */}
-              {nodes.some((n) => n.hasLoop) && (
-                <div className="absolute top-4 left-4 max-w-lg z-10">
-                  <div className="bg-red-900/90 backdrop-blur border-2 border-red-500 rounded-lg p-4 flex items-start gap-3">
-                    <AlertCircle className="w-6 h-6 text-red-400 flex-shrink-0 mt-0.5" />
-                    <div className="flex-1">
-                      <div className="font-bold text-red-400 mb-1">
-                        Loop Detected!
-                      </div>
-                      <div className="text-sm text-slate-200">
-                        API call repeated multiple times with identical
-                        parameters.
-                      </div>
-                    </div>
-                  </div>
-                </div>
+              {isConnected ? (
+                <>
+                  <Wifi className="w-4 h-4 text-green-400" />
+                  <span className="text-sm text-green-400">Connected</span>
+                </>
+              ) : (
+                <>
+                  <WifiOff className="w-4 h-4 text-red-400" />
+                  <span className="text-sm text-red-400">Disconnected</span>
+                </>
               )}
-
-              {/* Graph Canvas */}
-              <div
-                className="w-full h-full flex items-center justify-center overflow-hidden"
-                style={{ cursor: isDragging ? "grabbing" : "grab" }}
-                onMouseDown={handleMouseDown}
-                onMouseMove={handleMouseMove}
-                onMouseUp={handleMouseUp}
-                onMouseLeave={handleMouseUp}
-              >
-                <div
-                  style={{
-                    transform: `scale(${zoom}) translate(${
-                      panOffset.x / zoom
-                    }px, ${panOffset.y / zoom}px)`,
-                    transformOrigin: "center",
-                    transition: isDragging ? "none" : "transform 0.1s ease-out"
-                  }}
-                >
-                  <svg width="900" height="600" className="relative">
-                    {/* Grid Background */}
-                    <defs>
-                      <pattern
-                        id="grid"
-                        width="20"
-                        height="20"
-                        patternUnits="userSpaceOnUse"
-                      >
-                        <circle cx="1" cy="1" r="1" fill="#334155" />
-                      </pattern>
-                    </defs>
-                    <rect width="900" height="600" fill="url(#grid)" />
-
-                    {/* Edges */}
-                    {edges.map((conn, idx) => {
-                      const fromNode = nodes.find((n) => n.id === conn.from);
-                      const toNode = nodes.find((n) => n.id === conn.to);
-                      const color = getTypeColor(fromNode.type).line;
-
-                      return (
-                        <g key={idx}>
-                          <line
-                            x1={fromNode.x}
-                            y1={fromNode.y + 40}
-                            x2={toNode.x}
-                            y2={toNode.y}
-                            stroke={color}
-                            strokeWidth="2"
-                            strokeDasharray={
-                              toNode.status === "pending" ? "5,5" : ""
-                            }
-                            opacity="0.6"
-                          />
-                          <circle
-                            cx={toNode.x}
-                            cy={toNode.y}
-                            r="4"
-                            fill={color}
-                          />
-                        </g>
-                      );
-                    })}
-                  </svg>
-
-                  {/* Nodes */}
-                  <div className="absolute top-0 left-0 w-full h-full pointer-events-none">
-                    {nodes.map((node) => {
-                      const colors = getTypeColor(node.type);
-                      const isSelected = selectedNodeId === node.id;
-
-                      return (
-                        <div
-                          key={node.id}
-                          className="absolute pointer-events-auto cursor-pointer transition-transform hover:scale-105"
-                          style={{
-                            left: node.x - 100,
-                            top: node.y,
-                            width: "200px"
-                          }}
-                          onClick={() => handleNodeClick(node)}
-                        >
-                          <div
-                            className={`
-                            px-4 py-3 rounded-lg border-2 ${colors.border} ${
-                              colors.bg
-                            } bg-slate-800
-                            ${
-                              isSelected
-                                ? "ring-2 ring-blue-400 shadow-lg shadow-blue-500/50"
-                                : ""
-                            }
-                            ${
-                              node.status === "running"
-                                ? "ring-2 ring-yellow-400 animate-pulse"
-                                : ""
-                            }
-                            ${node.hasLoop ? "ring-2 ring-red-500" : ""}
-                          `}
-                          >
-                            <div className="font-bold text-sm mb-2 text-center">
-                              {node.label}
-                            </div>
-                            <div
-                              className={`text-xs px-2 py-0.5 rounded ${colors.bg} ${colors.text} text-center mb-2 font-bold`}
-                            >
-                              {node.type.toUpperCase()}
-                            </div>
-                            <div className="text-xs space-y-1">
-                              <div className="flex items-center justify-center gap-1 text-green-400">
-                                <DollarSign className="w-3 h-3" />
-                                <span>${node.cost.toFixed(4)}</span>
-                              </div>
-                              <div className="flex items-center justify-center gap-1 text-slate-400">
-                                <Clock className="w-3 h-3" />
-                                <span>{(node.latency / 1000).toFixed(2)}s</span>
-                              </div>
-                            </div>
-                            {node.hasLoop && (
-                              <div className="mt-2 text-xs text-red-400 text-center font-bold">
-                                ⚠️ Loop
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              </div>
-
-              {/* Legend */}
-              <div className="absolute bottom-4 left-4 bg-slate-800/90 backdrop-blur border border-slate-700 rounded-lg p-4">
-                <div className="font-bold text-sm mb-3">Legend</div>
-                <div className="space-y-2 text-xs">
-                  <div className="flex items-center gap-2">
-                    <div className="w-4 h-4 rounded-full bg-blue-500"></div>
-                    <span>LLM Call</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <div className="w-4 h-4 rounded-full bg-green-500"></div>
-                    <span>Tool Call</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <div className="w-4 h-4 rounded-full bg-purple-500"></div>
-                    <span>Decision</span>
-                  </div>
-                </div>
-              </div>
             </div>
-
-            {/* Right Sidebar */}
-            {selectedNode && (
-              <div className="w-96 bg-slate-800 border-l border-slate-700 overflow-y-auto flex flex-col">
-                {/* Sidebar Header */}
-                <div className="p-4 border-b border-slate-700">
-                  <div className="flex items-center justify-between mb-3">
-                    <h3 className="font-bold text-lg">{selectedNode.label}</h3>
-                    <button
-                      onClick={() => setSelectedNodeId(null)}
-                      className="p-1 hover:bg-slate-700 rounded transition-colors"
-                    >
-                      <X className="w-4 h-4" />
-                    </button>
-                  </div>
-
-                  {/* View Toggle */}
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => setSidebarView("details")}
-                      className={`flex-1 px-3 py-2 rounded text-sm font-semibold transition-colors ${
-                        sidebarView === "details"
-                          ? "bg-blue-600"
-                          : "bg-slate-700 hover:bg-slate-600"
-                      }`}
-                    >
-                      Details
-                    </button>
-                    <button
-                      onClick={() => setSidebarView("replay")}
-                      className={`flex-1 px-3 py-2 rounded text-sm font-semibold transition-colors ${
-                        sidebarView === "replay"
-                          ? "bg-blue-600"
-                          : "bg-slate-700 hover:bg-slate-600"
-                      }`}
-                    >
-                      Replay
-                    </button>
-                  </div>
-                </div>
-
-                {/* Sidebar Content */}
-                <div className="flex-1 overflow-y-auto">
-                  {sidebarView === "details" ? (
-                    <div className="p-4">
-                      <div
-                        className={`inline-block px-3 py-1 rounded text-xs font-bold mb-4 ${
-                          selectedNode.type === "llm"
-                            ? "bg-blue-500/20 text-blue-400"
-                            : selectedNode.type === "tool"
-                            ? "bg-green-500/20 text-green-400"
-                            : "bg-purple-500/20 text-purple-400"
-                        }`}
-                      >
-                        {selectedNode.type.toUpperCase()}
-                      </div>
-
-                      <div className="grid grid-cols-2 gap-3 mb-4">
-                        <div className="bg-slate-900 rounded-lg p-3">
-                          <div className="text-xs text-slate-400 mb-1">
-                            Latency
-                          </div>
-                          <div className="text-lg font-bold">
-                            {(selectedNode.latency / 1000).toFixed(2)}s
-                          </div>
-                        </div>
-                        <div className="bg-slate-900 rounded-lg p-3">
-                          <div className="text-xs text-slate-400 mb-1">
-                            Cost
-                          </div>
-                          <div className="text-lg font-bold text-green-400">
-                            ${selectedNode.cost.toFixed(4)}
-                          </div>
-                        </div>
-                        {selectedNode.tokens && (
-                          <>
-                            <div className="bg-slate-900 rounded-lg p-3">
-                              <div className="text-xs text-slate-400 mb-1">
-                                Input Tokens
-                              </div>
-                              <div className="text-lg font-bold">
-                                {selectedNode.tokens.input}
-                              </div>
-                            </div>
-                            <div className="bg-slate-900 rounded-lg p-3">
-                              <div className="text-xs text-slate-400 mb-1">
-                                Output Tokens
-                              </div>
-                              <div className="text-lg font-bold">
-                                {selectedNode.tokens.output}
-                              </div>
-                            </div>
-                          </>
-                        )}
-                      </div>
-
-                      {selectedNode.type === "llm" && selectedNode.prompt && (
-                        <>
-                          <div className="mb-4">
-                            <div className="font-bold text-sm mb-2">Prompt</div>
-                            <div className="bg-slate-900 rounded-lg p-3 font-mono text-xs max-h-32 overflow-y-auto border border-slate-700">
-                              {selectedNode.prompt}
-                            </div>
-                          </div>
-                          {selectedNode.response && (
-                            <div className="mb-4">
-                              <div className="font-bold text-sm mb-2">
-                                Response
-                              </div>
-                              <div className="bg-slate-900 rounded-lg p-3 font-mono text-xs max-h-48 overflow-y-auto border border-slate-700">
-                                {selectedNode.response}
-                              </div>
-                            </div>
-                          )}
-                        </>
-                      )}
-
-                      {selectedNode.type === "tool" &&
-                        selectedNode.toolParams && (
-                          <div className="mb-4">
-                            <div className="font-bold text-sm mb-2">
-                              Parameters
-                            </div>
-                            <div className="bg-slate-900 rounded-lg p-3 font-mono text-xs border border-slate-700">
-                              {JSON.stringify(selectedNode.toolParams, null, 2)}
-                            </div>
-                          </div>
-                        )}
-
-                      {selectedNode.hasLoop && (
-                        <div className="bg-red-900/20 border border-red-500 rounded-lg p-4 mb-4">
-                          <div className="font-bold text-red-400 text-sm mb-2 flex items-center gap-2">
-                            <AlertCircle className="w-4 h-4" />
-                            Loop Detected
-                          </div>
-                          <div className="text-xs text-slate-300">
-                            This operation was called multiple times with
-                            identical parameters, wasting $
-                            {(selectedNode.cost * 4).toFixed(4)}.
-                          </div>
-                        </div>
-                      )}
-
-                      <button
-                        onClick={() => setSidebarView("replay")}
-                        className="w-full px-4 py-3 bg-blue-600 hover:bg-blue-500 rounded-lg font-bold flex items-center justify-center gap-2 transition-colors"
-                      >
-                        <Play className="w-4 h-4" />
-                        Replay from Here
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="p-4">
-                      <h4 className="text-lg font-bold mb-4 text-blue-400">
-                        Replay Studio
-                      </h4>
-
-                      <div className="mb-6">
-                        <div className="bg-slate-900 rounded-lg p-4 border border-slate-700 mb-4">
-                          <div className="text-sm font-bold mb-2 text-slate-400">
-                            Original Configuration
-                          </div>
-                          <div className="space-y-2 text-sm">
-                            <div className="flex justify-between">
-                              <span className="text-slate-400">Cost:</span>
-                              <span className="font-bold text-red-400">
-                                ${selectedNode.cost.toFixed(4)}
-                              </span>
-                            </div>
-                            <div className="flex justify-between">
-                              <span className="text-slate-400">Latency:</span>
-                              <span className="font-bold">
-                                {(selectedNode.latency / 1000).toFixed(2)}s
-                              </span>
-                            </div>
-                            {selectedNode.tokens && (
-                              <div className="flex justify-between">
-                                <span className="text-slate-400">Tokens:</span>
-                                <span className="font-bold">
-                                  {selectedNode.tokens.input +
-                                    selectedNode.tokens.output}
-                                </span>
-                              </div>
-                            )}
-                          </div>
-                        </div>
-
-                        {selectedNode.type === "llm" && selectedNode.prompt && (
-                          <div>
-                            <div className="text-sm font-bold mb-2">
-                              Edit Prompt
-                            </div>
-                            <textarea
-                              value={editedPrompt}
-                              onChange={(e) => setEditedPrompt(e.target.value)}
-                              className="w-full bg-slate-900 rounded-lg p-3 font-mono text-xs h-40 border-2 border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-400 resize-none"
-                              placeholder="Modify the prompt to test optimizations..."
-                            />
-                          </div>
-                        )}
-                      </div>
-
-                      {replayResults && (
-                        <div className="bg-green-900/20 border-2 border-green-500 rounded-lg p-4 mb-4">
-                          <div className="text-sm font-bold mb-3 text-green-400 flex items-center gap-2">
-                            <Zap className="w-4 h-4" />
-                            Replay Results
-                          </div>
-                          <div className="space-y-2 text-sm">
-                            <div className="flex justify-between">
-                              <span className="text-slate-300">New Cost:</span>
-                              <span className="font-bold text-green-400">
-                                ${replayResults.newCost.toFixed(4)}
-                              </span>
-                            </div>
-                            <div className="flex justify-between">
-                              <span className="text-slate-300">Savings:</span>
-                              <span className="font-bold text-green-400">
-                                $
-                                {(
-                                  replayResults.originalCost -
-                                  replayResults.newCost
-                                ).toFixed(4)}{" "}
-                                (30%)
-                              </span>
-                            </div>
-                            <div className="flex justify-between">
-                              <span className="text-slate-300">
-                                Nodes Affected:
-                              </span>
-                              <span className="font-bold">
-                                {replayResults.nodesAffected}
-                              </span>
-                            </div>
-                          </div>
-                        </div>
-                      )}
-
-                      <button
-                        onClick={handleReplay}
-                        disabled={
-                          selectedNode.type === "llm" &&
-                          (!editedPrompt ||
-                            editedPrompt === selectedNode.prompt)
-                        }
-                        className="w-full px-4 py-3 bg-blue-600 hover:bg-blue-500 disabled:bg-slate-700 disabled:cursor-not-allowed rounded-lg font-bold flex items-center justify-center gap-2 transition-colors mb-3"
-                      >
-                        <Play className="w-5 h-5" />
-                        {replayResults ? "Replay Again" : "Start Replay"}
-                      </button>
-
-                      <button
-                        onClick={() => setSidebarView("details")}
-                        className="w-full px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg text-sm flex items-center justify-center gap-2 transition-colors"
-                      >
-                        Back to Details
-                      </button>
-                    </div>
-                  )}
-                </div>
+            {liveUpdates > 0 && (
+              <div className="flex items-center gap-2 bg-blue-900/30 border border-blue-500/30 px-3 py-1 rounded-lg">
+                <Activity className="w-4 h-4 text-blue-400 animate-pulse" />
+                <span className="text-sm text-blue-400">
+                  {liveUpdates} updates
+                </span>
               </div>
             )}
-          </>
+          </div>
+          <div className="flex items-center gap-4">
+            <div className="flex gap-2 text-xs">
+              <div className="bg-slate-800 px-3 py-2 rounded-lg">
+                <span className="text-slate-400">Total: </span>
+                <span className="font-bold">{overallStats.totalTraces}</span>
+              </div>
+              <div className="bg-slate-800 px-3 py-2 rounded-lg">
+                <span className="text-slate-400">Running: </span>
+                <span className="font-bold text-yellow-400">
+                  {overallStats.runningTraces}
+                </span>
+              </div>
+              <div className="bg-slate-800 px-3 py-2 rounded-lg">
+                <span className="text-slate-400">Avg Latency: </span>
+                <span className="font-bold">
+                  {(overallStats.avgLatency / 1000).toFixed(2)}s
+                </span>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 bg-green-600 px-4 py-2 rounded-lg font-bold">
+              <DollarSign className="w-4 h-4" />
+              <span>${overallStats.totalCost.toFixed(4)}</span>
+            </div>
+          </div>
+        </div>
+        {connectionError && (
+          <div className="mt-3 bg-red-900/20 border border-red-500 rounded-lg p-3 flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 text-red-400" />
+            <span className="text-sm text-red-300">
+              Connection Error: {connectionError}
+            </span>
+          </div>
         )}
+        <div className="flex items-center gap-3 mt-4">
+          <div className="flex-1 relative">
+            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <input
+              type="text"
+              placeholder="Search traces..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full bg-slate-800 border border-slate-700 rounded-lg pl-10 pr-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+          <select
+            value={filterProject}
+            onChange={(e) => setFilterProject(e.target.value)}
+            className="bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          >
+            <option value="all">All Projects</option>
+            {projects.map((project) => (
+              <option key={project} value={project}>
+                {project}
+              </option>
+            ))}
+          </select>
+          <select
+            value={filterStatus}
+            onChange={(e) => setFilterStatus(e.target.value)}
+            className="bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          >
+            <option value="all">All Statuses</option>
+            <option value="complete">Complete</option>
+            <option value="running">Running</option>
+            <option value="error">Failed</option>
+          </select>
+          <button
+            onClick={handleRefresh}
+            className="bg-slate-800 border border-slate-700 rounded-lg p-2 hover:bg-slate-700 transition-colors"
+            title="Refresh traces"
+          >
+            <RefreshCw className="w-4 h-4" />
+          </button>
+        </div>
       </div>
-
-      {/* Bottom Stats Bar */}
-      <div className="bg-slate-900 border-t border-slate-700 p-3">
+      <div className="flex-1 overflow-y-auto p-6">
+        <div className="max-w-7xl mx-auto">
+          <div className="mb-4 text-sm text-slate-400">
+            Showing {filteredTraces.length} of {traces.length} traces
+          </div>
+          <div className="space-y-3">
+            {filteredTraces.map((trace) => (
+              <div
+                key={trace.id}
+                onClick={() => handleTraceClick(trace)}
+                className="bg-slate-800 border border-slate-700 rounded-lg p-4 hover:bg-slate-700 hover:border-blue-500 transition-all cursor-pointer group"
+              >
+                <div className="flex items-start justify-between">
+                  <div className="flex-1">
+                    <div className="flex items-center gap-3 mb-2">
+                      <div className="font-bold text-lg">{trace.id}</div>
+                      <div
+                        className={`text-xs px-2 py-1 rounded font-bold ${getStatusColor(
+                          trace.status
+                        )}`}
+                      >
+                        {trace.status?.toUpperCase() || "UNKNOWN"}
+                      </div>
+                      <div className="text-xs px-2 py-1 rounded bg-slate-700 text-slate-300">
+                        {trace.project || "default"}
+                      </div>
+                    </div>
+                    <div className="text-sm text-slate-300 mb-3">
+                      {trace.description || "No description"}
+                    </div>
+                    <div className="flex items-center gap-6 text-sm">
+                      <div className="flex items-center gap-2 text-slate-400">
+                        <Clock className="w-4 h-4" />
+                        <span>{formatTimestamp(trace.timestamp)}</span>
+                      </div>
+                      <div className="flex items-center gap-2 text-slate-400">
+                        <Activity className="w-4 h-4" />
+                        <span>{trace.nodeCount || 0} nodes</span>
+                      </div>
+                      <div className="flex items-center gap-2 text-slate-400">
+                        <Zap className="w-4 h-4" />
+                        <span>{((trace.latency || 0) / 1000).toFixed(2)}s</span>
+                      </div>
+                      <div className="flex items-center gap-2 text-green-400">
+                        <DollarSign className="w-4 h-4" />
+                        <span>${(trace.cost || 0).toFixed(4)}</span>
+                      </div>
+                    </div>
+                  </div>
+                  <ChevronRight className="w-5 h-5 text-slate-400 group-hover:text-blue-400 transition-colors" />
+                </div>
+              </div>
+            ))}
+          </div>
+          {filteredTraces.length === 0 && (
+            <div className="text-center py-12">
+              <Activity className="w-12 h-12 text-slate-600 mx-auto mb-4" />
+              <div className="text-lg font-bold text-slate-400 mb-2">
+                No traces found
+              </div>
+              <div className="text-sm text-slate-500">
+                {traces.length === 0
+                  ? "Waiting for traces... Make sure your agent is sending events to the backend."
+                  : "Try adjusting your filters or search query"}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+      <div className="bg-slate-900 border-t border-slate-700 p-4">
         <div className="grid grid-cols-5 gap-4 text-center text-sm">
           <div>
-            <div className="text-xs text-slate-400 mb-1">LLM Calls</div>
-            <div className="text-lg font-bold text-blue-400">
-              {stats.llmCount}
+            <div className="text-xs text-slate-400 mb-1">Total Traces</div>
+            <div className="text-lg font-bold">{overallStats.totalTraces}</div>
+          </div>
+          <div>
+            <div className="text-xs text-slate-400 mb-1">Completed</div>
+            <div className="text-lg font-bold text-green-400">
+              {overallStats.completedTraces}
             </div>
           </div>
           <div>
-            <div className="text-xs text-slate-400 mb-1">Tool Calls</div>
-            <div className="text-lg font-bold text-green-400">
-              {stats.toolCount}
+            <div className="text-xs text-slate-400 mb-1">Running</div>
+            <div className="text-lg font-bold text-yellow-400">
+              {overallStats.runningTraces}
+            </div>
+          </div>
+          <div>
+            <div className="text-xs text-slate-400 mb-1">Failed</div>
+            <div className="text-lg font-bold text-red-400">
+              {overallStats.failedTraces}
             </div>
           </div>
           <div>
             <div className="text-xs text-slate-400 mb-1">Total Cost</div>
             <div className="text-lg font-bold text-green-400">
-              ${stats.totalCost.toFixed(4)}
+              ${overallStats.totalCost.toFixed(4)}
             </div>
-          </div>
-          <div>
-            <div className="text-xs text-slate-400 mb-1">Avg Latency</div>
-            <div className="text-lg font-bold">
-              {(stats.avgLatency / 1000).toFixed(2)}s
-            </div>
-          </div>
-          <div>
-            <div className="text-xs text-slate-400 mb-1">Status</div>
-            <div className="text-lg font-bold text-yellow-400">Running</div>
           </div>
         </div>
       </div>
@@ -784,4 +445,380 @@ const AgentTraceVisualizer = () => {
   );
 };
 
-export default AgentTraceVisualizer;
+// ============================================================================
+// TRACE DETAIL VIEW COMPONENT
+// ============================================================================
+
+const TraceDetailView = ({ trace, socket, isConnected, onBack }) => {
+  const [viewMode, setViewMode] = useState("graph");
+  const [selectedNodeId, setSelectedNodeId] = useState(null);
+  const [zoom, setZoom] = useState(1);
+  const [nodes, setNodes] = useState([]);
+  const [edges, setEdges] = useState([]);
+  const [anomalies, setAnomalies] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [liveEvents, setLiveEvents] = useState([]);
+  const [traceData, setTraceData] = useState(trace);
+
+  useEffect(() => {
+    const fetchTraceDetails = async () => {
+      try {
+        setLoading(true);
+        const response = await fetch(`${BACKEND_URL}/api/traces/${trace.id}`);
+        if (!response.ok) throw new Error("Failed to fetch trace details");
+
+        const data = await response.json();
+        setTraceData(data.trace);
+        setNodes(data.nodes || []);
+        setEdges(data.edges || []);
+        setAnomalies(data.anomalies || []);
+        setLoading(false);
+      } catch (error) {
+        console.error("Error fetching trace details:", error);
+        setLoading(false);
+      }
+    };
+
+    fetchTraceDetails();
+  }, [trace.id]);
+
+  useEffect(() => {
+    if (!socket || !isConnected) return;
+
+    console.log(`👀 Watching trace: ${trace.id}`);
+    socket.emit("watch_trace", trace.id);
+
+    const handleNewEvent = (event) => {
+      console.log("📥 New event received:", event);
+      setLiveEvents((prev) => [...prev, event]);
+
+      fetch(`${BACKEND_URL}/api/traces/${trace.id}`)
+        .then((res) => res.json())
+        .then((data) => {
+          setNodes(data.nodes || []);
+          setTraceData(data.trace);
+        })
+        .catch(console.error);
+    };
+
+    const handleTraceData = (data) => {
+      console.log("📊 Trace data updated:", data);
+      if (data.trace) setTraceData(data.trace);
+      if (data.nodes) setNodes(data.nodes);
+      if (data.edges) setEdges(data.edges);
+    };
+
+    socket.on("new_event", handleNewEvent);
+    socket.on("trace_data", handleTraceData);
+
+    return () => {
+      console.log(`👋 Stopped watching trace: ${trace.id}`);
+      socket.emit("unwatch_trace", trace.id);
+      socket.off("new_event", handleNewEvent);
+      socket.off("trace_data", handleTraceData);
+    };
+  }, [socket, isConnected, trace.id]);
+
+  const selectedNode = nodes.find((n) => n.id === selectedNodeId);
+
+  const getTypeColor = (type) => {
+    switch (type) {
+      case "llm":
+        return {
+          border: "border-blue-500",
+          bg: "bg-blue-500/10",
+          text: "text-blue-400"
+        };
+      case "tool":
+        return {
+          border: "border-green-500",
+          bg: "bg-green-500/10",
+          text: "text-green-400"
+        };
+      case "chain":
+      case "decision":
+        return {
+          border: "border-purple-500",
+          bg: "bg-purple-500/10",
+          text: "text-purple-400"
+        };
+      default:
+        return {
+          border: "border-slate-500",
+          bg: "bg-slate-500/10",
+          text: "text-slate-400"
+        };
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="w-full h-screen bg-slate-950 text-white flex items-center justify-center">
+        <div className="text-center">
+          <Activity className="w-12 h-12 text-blue-400 mx-auto mb-4 animate-spin" />
+          <div className="text-lg font-bold">Loading trace details...</div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="w-full h-screen bg-slate-950 text-white flex flex-col">
+      <div className="bg-slate-900 border-b border-slate-700 p-4">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <button
+              onClick={onBack}
+              className="p-2 hover:bg-slate-800 rounded transition-colors"
+            >
+              <ChevronRight className="w-5 h-5 rotate-180" />
+            </button>
+            <Network className="w-6 h-6 text-blue-400" />
+            <div>
+              <h1 className="text-xl font-bold">{traceData.id}</h1>
+              <div className="text-sm text-slate-400">
+                {traceData.project || "default"}
+              </div>
+            </div>
+            {liveEvents.length > 0 && (
+              <div className="flex items-center gap-2 bg-green-900/30 border border-green-500/30 px-3 py-1 rounded-lg">
+                <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
+                <span className="text-sm text-green-400">
+                  {liveEvents.length} new events
+                </span>
+              </div>
+            )}
+            {anomalies.length > 0 && (
+              <div className="flex items-center gap-2 bg-red-900/30 border border-red-500/30 px-3 py-1 rounded-lg">
+                <AlertCircle className="w-4 h-4 text-red-400" />
+                <span className="text-sm text-red-400">
+                  {anomalies.length} anomalies
+                </span>
+              </div>
+            )}
+          </div>
+          <div className="flex items-center gap-4">
+            <div className="flex gap-2">
+              <button
+                onClick={() => setViewMode("graph")}
+                className={`px-3 py-1.5 rounded text-sm font-semibold transition-colors ${
+                  viewMode === "graph"
+                    ? "bg-blue-600"
+                    : "bg-slate-800 hover:bg-slate-700"
+                }`}
+              >
+                Graph
+              </button>
+              <button
+                onClick={() => setViewMode("timeline")}
+                className={`px-3 py-1.5 rounded text-sm font-semibold transition-colors ${
+                  viewMode === "timeline"
+                    ? "bg-blue-600"
+                    : "bg-slate-800 hover:bg-slate-700"
+                }`}
+              >
+                Timeline
+              </button>
+              <button
+                onClick={() => setViewMode("analytics")}
+                className={`px-3 py-1.5 rounded text-sm font-semibold transition-colors ${
+                  viewMode === "analytics"
+                    ? "bg-blue-600"
+                    : "bg-slate-800 hover:bg-slate-700"
+                }`}
+              >
+                Analytics
+              </button>
+            </div>
+            <div className="bg-green-600 px-4 py-2 rounded-lg font-bold">
+              ${(traceData.cost || 0).toFixed(4)}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {viewMode === "timeline" && <TimelineView nodes={nodes} />}
+      {viewMode === "analytics" && <AnalyticsView nodes={nodes} />}
+
+      {viewMode === "graph" && (
+        <div className="flex-1 relative bg-slate-950 overflow-hidden flex">
+          <div className="absolute top-4 right-4 z-10 flex gap-2">
+            <button
+              onClick={() => setZoom(Math.min(zoom + 0.1, 2))}
+              className="bg-slate-800 border border-slate-700 p-2 rounded hover:bg-slate-700"
+            >
+              <Maximize2 className="w-4 h-4" />
+            </button>
+            <button
+              onClick={() => setZoom(Math.max(zoom - 0.1, 0.5))}
+              className="bg-slate-800 border border-slate-700 p-2 rounded hover:bg-slate-700"
+            >
+              <Minimize2 className="w-4 h-4" />
+            </button>
+            <button
+              onClick={() => setZoom(1)}
+              className="bg-slate-800 border border-slate-700 px-3 py-2 rounded hover:bg-slate-700 text-sm"
+            >
+              Reset
+            </button>
+          </div>
+          <div className="flex-1 w-full h-full flex items-center justify-center overflow-hidden">
+            <div
+              style={{ transform: `scale(${zoom})`, transformOrigin: "center" }}
+            >
+              <div
+                className="relative"
+                style={{ width: "900px", height: "700px" }}
+              >
+                {nodes.map((node) => {
+                  const colors = getTypeColor(node.type);
+                  return (
+                    <div
+                      key={node.id}
+                      onClick={() => setSelectedNodeId(node.id)}
+                      className="absolute cursor-pointer transition-transform hover:scale-105"
+                      style={{ left: node.x, top: node.y, width: "180px" }}
+                    >
+                      <div
+                        className={`px-4 py-3 rounded-lg border-2 ${
+                          colors.border
+                        } ${colors.bg} bg-slate-800 ${
+                          selectedNodeId === node.id
+                            ? "ring-2 ring-blue-400"
+                            : ""
+                        } ${node.hasLoop ? "ring-2 ring-red-500" : ""}`}
+                      >
+                        <div className="font-bold text-sm mb-2 text-center">
+                          {node.label}
+                        </div>
+                        <div
+                          className={`text-xs px-2 py-0.5 rounded ${colors.bg} ${colors.text} text-center mb-2 font-bold`}
+                        >
+                          {node.type.toUpperCase()}
+                        </div>
+                        <div className="text-xs space-y-1">
+                          <div className="flex items-center justify-center gap-1 text-green-400">
+                            <DollarSign className="w-3 h-3" />
+                            <span>${(node.cost || 0).toFixed(4)}</span>
+                          </div>
+                          <div className="flex items-center justify-center gap-1 text-slate-400">
+                            <Clock className="w-3 h-3" />
+                            <span>
+                              {((node.latency || 0) / 1000).toFixed(2)}s
+                            </span>
+                          </div>
+                        </div>
+                        {node.hasLoop && (
+                          <div className="mt-2 text-xs text-red-400 text-center font-bold">
+                            ⚠️ Loop
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+          {selectedNode && (
+            <div className="w-96 bg-slate-800 border-l border-slate-700 p-4 overflow-y-auto">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="font-bold text-lg">{selectedNode.label}</h3>
+                <button
+                  onClick={() => setSelectedNodeId(null)}
+                  className="p-1 hover:bg-slate-700 rounded"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+              <div className="space-y-3">
+                <div className="bg-slate-900 rounded-lg p-3">
+                  <div className="text-xs text-slate-400 mb-1">Type</div>
+                  <div className="font-bold">
+                    {selectedNode.type.toUpperCase()}
+                  </div>
+                </div>
+                <div className="bg-slate-900 rounded-lg p-3">
+                  <div className="text-xs text-slate-400 mb-1">Cost</div>
+                  <div className="font-bold text-green-400">
+                    ${(selectedNode.cost || 0).toFixed(4)}
+                  </div>
+                </div>
+                <div className="bg-slate-900 rounded-lg p-3">
+                  <div className="text-xs text-slate-400 mb-1">Latency</div>
+                  <div className="font-bold">
+                    {((selectedNode.latency || 0) / 1000).toFixed(2)}s
+                  </div>
+                </div>
+                {selectedNode.tokens && (
+                  <>
+                    <div className="bg-slate-900 rounded-lg p-3">
+                      <div className="text-xs text-slate-400 mb-1">
+                        Input Tokens
+                      </div>
+                      <div className="font-bold">
+                        {selectedNode.tokens.input || 0}
+                      </div>
+                    </div>
+                    <div className="bg-slate-900 rounded-lg p-3">
+                      <div className="text-xs text-slate-400 mb-1">
+                        Output Tokens
+                      </div>
+                      <div className="font-bold">
+                        {selectedNode.tokens.output || 0}
+                      </div>
+                    </div>
+                  </>
+                )}
+                {selectedNode.type === "llm" && selectedNode.prompt && (
+                  <div className="bg-slate-900 rounded-lg p-3">
+                    <div className="text-xs text-slate-400 mb-2">Prompt</div>
+                    <div className="text-xs font-mono bg-slate-950 p-2 rounded max-h-32 overflow-y-auto">
+                      {selectedNode.prompt}
+                    </div>
+                  </div>
+                )}
+                {selectedNode.type === "llm" && selectedNode.response && (
+                  <div className="bg-slate-900 rounded-lg p-3">
+                    <div className="text-xs text-slate-400 mb-2">Response</div>
+                    <div className="text-xs font-mono bg-slate-950 p-2 rounded max-h-32 overflow-y-auto">
+                      {selectedNode.response}
+                    </div>
+                  </div>
+                )}
+                {selectedNode.type === "tool" && selectedNode.toolName && (
+                  <div className="bg-slate-900 rounded-lg p-3">
+                    <div className="text-xs text-slate-400 mb-1">Tool Name</div>
+                    <div className="font-bold">{selectedNode.toolName}</div>
+                  </div>
+                )}
+                {selectedNode.type === "tool" && selectedNode.toolParams && (
+                  <div className="bg-slate-900 rounded-lg p-3">
+                    <div className="text-xs text-slate-400 mb-2">
+                      Parameters
+                    </div>
+                    <div className="text-xs font-mono bg-slate-950 p-2 rounded max-h-32 overflow-y-auto">
+                      {JSON.stringify(selectedNode.toolParams, null, 2)}
+                    </div>
+                  </div>
+                )}
+                {selectedNode.error && (
+                  <div className="bg-red-900/20 border border-red-500 rounded-lg p-3">
+                    <div className="text-xs text-red-400 mb-2 font-bold">
+                      Error
+                    </div>
+                    <div className="text-xs text-slate-300">
+                      {selectedNode.error}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
+
+export default AgentTraceViewer;
