@@ -31,11 +31,18 @@ export class TracingCallbackHandler extends BaseCallbackHandler {
   constructor(config?: Partial<TraceConfig>) {
     super();
 
+    // First: Initialize config with defaults
     this.config = {
       endpoint: config?.endpoint || "http://localhost:8000",
       projectName: config?.projectName || "default",
       debug: config?.debug || false,
       ...config
+    };
+
+    // Then: Add projectName to metadata
+    this.config.metadata = {
+      projectName: this.config.projectName,
+      ...this.config.metadata
     };
 
     this.client = new TraceClient(this.config);

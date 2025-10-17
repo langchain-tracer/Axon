@@ -1,33 +1,36 @@
 {
-  "name": "@agent-trace/backend",
-  "version": "0.1.0",
-  "description": "Backend server for Agent Trace Visualizer",
+  "name": "agent-trace-backend",
+  "version": "1.0.0",
   "type": "module",
-  "main": "dist/index.js",
+  "description": "Backend for Agent Trace Visualizer with SQLite",
+  "main": "dist/server.js",
   "scripts": {
-    "dev": "tsx watch src/index.ts",
+    "dev": "tsx watch src/server.ts",
     "build": "tsc",
-    "start": "node dist/index.js",
-    "clean": "rm -rf dist"
+    "start": "node dist/server.js",
+    "test": "vitest",
+    "test:ui": "vitest --ui",
+    "db:init": "tsx src/database/schema.ts",
+    "db:seed": "tsx src/database/seed.ts"
   },
-  "keywords": [
-    "agent",
-    "tracing",
-    "observability"
-  ],
-  "author": "Your Name",
-  "license": "MIT",
   "dependencies": {
     "express": "^4.18.2",
     "socket.io": "^4.7.0",
+    "better-sqlite3": "^9.4.0",
     "cors": "^2.8.5",
-    "dotenv": "^16.4.0"
+    "helmet": "^7.1.0",
+    "dotenv": "^16.4.0",
+    "uuid": "^9.0.1",
+    "winston": "^3.11.0"
   },
   "devDependencies": {
     "@types/express": "^4.17.21",
     "@types/node": "^20.11.0",
     "@types/cors": "^2.8.17",
+    "@types/uuid": "^9.0.7",
+    "@types/better-sqlite3": "^7.6.8",
     "typescript": "^5.3.0",
-    "tsx": "^4.7.0"
+    "tsx": "^4.7.0",
+    "vitest": "^1.2.0"
   }
 }
