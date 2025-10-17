@@ -32,50 +32,76 @@ export class TraceClient {
    */
   private connect(): void {
     try {
+      console.log(
+        `[AgentTrace] Attempting connection to ${this.config.endpoint}...`
+      );
+
       this.socket = io(this.config.endpoint, {
         auth: {
           apiKey: this.config.apiKey,
           projectName: this.config.projectName
         },
-        transports: ["websocket"],
+        transports: ["websocket", "polling"], // 👈 Add polling fallback
         reconnection: true,
         reconnectionAttempts: this.maxReconnectAttempts,
-        reconnectionDelay: 1000
+        reconnectionDelay: 1000,
+        timeout: 5000 // 👈 Add timeout
       });
 
       this.socket.on("connect", () => {
         this.connected = true;
         this.reconnectAttempts = 0;
-        this.log("✅ Connected to trace backend");
+        console.log(`[AgentTrace] ✅ Connected! Socket ID: ${this.socket?.id}`);
 
         // Flush queued events
         this.flushQueue();
       });
 
-      this.socket.on("disconnect", () => {
+      this.socket.on("disconnect", (reason) => {
         this.connected = false;
-        this.log("⚠️  Disconnected from trace backend");
+        console.log(`[AgentTrace] ⚠️  Disconnected: ${reason}`);
       });
 
       this.socket.on("connect_error", (error) => {
         this.reconnectAttempts++;
-        this.log(`❌ Connection error: ${error.message}`);
+        console.error(
+          `[AgentTrace] ❌ Connection error (attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts}):`,
+          error.message
+        );
+        console.error(
+          `[AgentTrace] Trying to connect to: ${this.config.endpoint}`
+        );
 
         if (this.reconnectAttempts >= this.maxReconnectAttempts) {
-          this.log(
-            "⚠️  Max reconnection attempts reached. Events will be queued."
+          console.error(
+            "[AgentTrace] ⚠️  Max reconnection attempts reached. Events will be queued."
           );
         }
       });
 
       this.socket.on("error", (error) => {
-        this.log(`❌ Socket error: ${error}`);
+        console.error(`[AgentTrace] ❌ Socket error:`, error);
+      });
+
+      // 👇 Add these listeners
+      this.socket.io.on("error", (error) => {
+        console.error(`[AgentTrace] ❌ IO error:`, error);
+      });
+
+      this.socket.io.on("reconnect_attempt", (attempt) => {
+        console.log(`[AgentTrace] 🔄 Reconnect attempt ${attempt}...`);
+      });
+
+      this.socket.io.on("reconnect_failed", () => {
+        console.error(
+          `[AgentTrace] ❌ Reconnection failed after ${this.maxReconnectAttempts} attempts`
+        );
       });
 
       // Start batch timer
       this.startBatchTimer();
     } catch (error) {
-      this.log(`❌ Failed to create socket: ${error}`);
+      console.error(`[AgentTrace] ❌ Failed to create socket:`, error);
     }
   }
 
@@ -119,8 +145,17 @@ export class TraceClient {
     const events = [...this.eventQueue];
     this.eventQueue = [];
 
+    // In flushQueue() method, update to:
     if (this.connected && this.socket) {
-      this.socket.emit("trace_events", events);
+      this.socket.emit("trace_events", events, (response: any) => {
+        if (response?.error) {
+          this.log(`❌ Server error: ${response.error}`);
+          // Re-queue failed events
+          this.eventQueue.unshift(...events);
+        } else {
+          this.log(`✅ ${events.length} events acknowledged`);
+        }
+      });
       this.log(`📤 Sent ${events.length} events`);
     } else {
       // Re-queue if not connected
