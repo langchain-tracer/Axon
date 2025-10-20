@@ -81,6 +81,7 @@ export interface ToolEndEvent extends BaseEvent {
   type: 'tool_end';
   toolName: string;
   output: string;
+  cost?: number;
   latency: number;
 }
 

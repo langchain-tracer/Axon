@@ -9,6 +9,15 @@ export { TracingCallbackHandler } from "./callback";
 export { TraceClient } from "./client";
 export { EventSerializer } from "./serializer";
 
+// Export auto-detection utilities
+export { 
+  createAutoTracer,
+  detectProjectConfig,
+  detectProjectName,
+  isAgentTraceConfigured,
+  getConfigurationStatus
+} from "./auto-detection";
+
 export type {
   TraceConfig,
   TraceEvent,

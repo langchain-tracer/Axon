@@ -19,10 +19,18 @@ import {
     Network,
     X,
     Play,
+    BarChart3,
+    GitBranch,
+    Filter,
 } from "lucide-react";
 
-import { TimelineView, AnalyticsView } from "./AnalyticsComponents.tsx";
+import { TimelineView, AnalyticsView } from "./AnalyticsComponents";
 import CustomNode from "./CustomNode";
+import CostView from "./CostView";
+import ToolsView from "./ToolsView";
+import DependencyView from "./DependencyView";
+
+type ViewMode = 'flow' | 'timeline' | 'cost' | 'tools' | 'dependency';
 
 // --- MOCK DATA ---
 const baseTime = Date.now();
@@ -42,25 +50,115 @@ const initialRawEdges = [
 // --- END MOCK DATA ---
 
 // --- DATA TRANSFORMATION FOR REACT FLOW ---
-const transformToReactFlowNodes = (rawNodes): Node[] =>
+const generateStepName = (node: any): string => {
+    const stepNumber = node.label?.replace('Step ', '') || '1';
+    
+    switch (node.type) {
+        case 'chain_start':
+            return 'Initial Query';
+        case 'chain_end':
+            return 'Final Response';
+        case 'llm_start':
+            return 'LLM Processing';
+        case 'llm_end':
+            return 'LLM Response';
+        case 'tool_start':
+            if (node.toolName === 'DynamicTool') {
+                // Try to determine the actual tool from the input
+                if (node.toolInput?.includes('weather') || node.toolInput?.includes('London')) {
+                    return 'Weather API Call';
+                } else if (node.toolInput?.includes('*') || node.toolInput?.includes('+') || node.toolInput?.includes('-')) {
+                    return 'Calculator Tool';
+                } else if (node.toolInput?.includes('search')) {
+                    return 'Search Tool';
+                }
+                return 'Tool Execution';
+            }
+            return `${node.toolName || 'Tool'} Call`;
+        case 'tool_end':
+            if (node.toolName === 'DynamicTool') {
+                if (node.toolOutput?.includes('weather') || node.toolOutput?.includes('°F')) {
+                    return 'Weather Response';
+                } else if (node.toolOutput?.includes('result') || node.toolOutput?.includes('=')) {
+                    return 'Calculation Result';
+                }
+                return 'Tool Response';
+            }
+            return `${node.toolName || 'Tool'} Response`;
+        default:
+            return node.label || `Step ${stepNumber}`;
+    }
+};
+
+const getStepType = (node: any): string => {
+    switch (node.type) {
+        case 'llm_start':
+        case 'llm_end':
+            return 'LLM';
+        case 'tool_start':
+        case 'tool_end':
+            return 'TOOL';
+        case 'chain_start':
+        case 'chain_end':
+            return 'DECISION';
+        default:
+            return 'STEP';
+    }
+};
+
+const calculateCost = (node: any): number => {
+    // Simple cost calculation based on latency and type
+    // In a real implementation, this would use actual token counts and pricing
+    const baseCost = 0.0001;
+    const latencyMultiplier = (node.latency || 0) / 1000; // Convert to seconds
+    
+    switch (node.type) {
+        case 'llm_start':
+        case 'llm_end':
+            return baseCost * latencyMultiplier * 10; // LLM calls are more expensive
+        case 'tool_start':
+        case 'tool_end':
+            return baseCost * latencyMultiplier;
+        default:
+            return baseCost;
+    }
+};
+
+const transformToReactFlowNodes = (rawNodes: any[]): Node[] =>
     rawNodes.map(node => ({
         id: node.id,
         type: 'custom',
-        position: node.position,
-        data: { ...node }
+        position: node.position || { x: 0, y: 0 },
+        data: {
+            ...node,
+            label: generateStepName(node),
+            type: getStepType(node),
+            cost: calculateCost(node),
+            latency: node.latency || 0,
+            status: node.status || 'complete',
+            // Add token information if available
+            tokens: node.tokens || { input: 0, output: 0 },
+            // Add tool-specific data
+            toolName: node.toolName,
+            toolInput: node.toolInput,
+            toolOutput: node.toolOutput,
+            // Add prompt/response data
+            prompt: node.prompt,
+            response: node.response
+        }
     }));
 
-const transformToReactFlowEdges = (rawEdges, rawNodes): Edge[] => {
+const transformToReactFlowEdges = (rawEdges: any[], rawNodes: any[]): Edge[] => {
     const nodeMap = new Map(rawNodes.map(n => [n.id, n]));
     return rawEdges.map((edge, i) => {
-        const sourceNode = nodeMap.get(edge.from);
-        const targetNode = nodeMap.get(edge.to);
+        const sourceNode = nodeMap.get(edge.source);
+        const targetNode = nodeMap.get(edge.target);
         const typeColor = sourceNode?.type === 'llm' ? '#3b82f6' : sourceNode?.type === 'tool' ? '#10b981' : '#a855f7';
         
         return {
-            id: `e${edge.from}-${edge.to}-${i}`,
-            source: edge.from,
-            target: edge.to,
+            id: edge.id || `e${edge.source}-${edge.target}-${i}`,
+            source: edge.source,
+            target: edge.target,
             type: 'smoothstep',
             animated: targetNode?.status === 'running',
             style: { stroke: typeColor, strokeWidth: 2 }
@@ -72,7 +170,7 @@ const initialNodes = transformToReactFlowNodes(initialRawNodes);
 const initialEdges = transformToReactFlowEdges(initialRawEdges, initialRawNodes);
 
 const AgentTraceVisualizerContent = () => {
-    const [viewMode, setViewMode] = useState("graph");
+    const [viewMode, setViewMode] = useState<ViewMode>("flow");
     const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
     const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
     const [selectedNode, setSelectedNode] = useState<Node | null>(null);
@@ -80,7 +178,7 @@ const AgentTraceVisualizerContent = () => {
 
     const [sidebarView, setSidebarView] = useState("details");
     const [editedPrompt, setEditedPrompt] = useState("");
-    const [replayResults, setReplayResults] = useState(null);
+    const [replayResults, setReplayResults] = useState<any>(null);
 
     const nodeTypes = useMemo(() => ({ custom: CustomNode }), []);
 
@@ -90,8 +188,8 @@ const AgentTraceVisualizerContent = () => {
         return {
             totalCost: rawNodes.reduce((sum, n) => sum + n.cost, 0),
             totalNodes: nodes.length,
-            llmCount: rawNodes.filter((n) => n.type === "llm").length,
-            toolCount: rawNodes.filter((n) => n.type === "tool").length,
+            llmCount: rawNodes.filter((n) => n.type?.includes("llm")).length,
+            toolCount: rawNodes.filter((n) => n.type?.includes("tool")).length,
             avgLatency: nodes.length > 0 ? totalLatency / nodes.length : 0,
         }
     }, [nodes]);
@@ -107,7 +205,7 @@ const AgentTraceVisualizerContent = () => {
         const node = nodes.find(n => n.id === nodeId);
         if (node) {
             setSelectedNode(node);
-            setViewMode("graph");
+            setViewMode("flow");
             const x = node.position.x + (node.width ?? 0) / 2;
             const y = node.position.y + (node.height ?? 0) / 2;
             setCenter(x, y, { zoom: 1.2, duration: 800 });
@@ -130,28 +228,60 @@ const AgentTraceVisualizerContent = () => {
         <div className="w-full h-screen bg-slate-950 text-white flex flex-col font-sans">
             <div className="bg-slate-900 border-b border-slate-700 p-4 flex items-center justify-between">
                 <div className="flex items-center gap-4">
-                    <Network className="w-6 h-6 text-blue-400" />
+                    <span className="text-blue-400 text-2xl">🌐</span>
                     <h1 className="text-xl font-bold">Agent Trace Visualizer</h1>
                 </div>
                 <div className="flex items-center gap-4">
-                    <div className="flex gap-2">
-                        {['graph', 'timeline', 'analytics'].map(mode => (
-                            <button key={mode} onClick={() => setViewMode(mode)} className={`px-3 py-1.5 rounded text-sm font-semibold transition-colors ${viewMode === mode ? "bg-blue-600" : "bg-slate-800 hover:bg-slate-700"}`}>
-                                {mode.charAt(0).toUpperCase() + mode.slice(1)}
-                            </button>
-                        ))}
+                    <div className="flex gap-2 bg-red-500 p-2">
+                        <button 
+                            onClick={() => setViewMode('flow')} 
+                            className="px-4 py-2 bg-blue-600 text-white rounded font-bold"
+                        >
+                            FLOW
+                        </button>
+                        <button 
+                            onClick={() => setViewMode('cost')} 
+                            className="px-4 py-2 bg-green-600 text-white rounded font-bold"
+                        >
+                            COST
+                        </button>
+                        <button 
+                            onClick={() => setViewMode('tools')} 
+                            className="px-4 py-2 bg-purple-600 text-white rounded font-bold"
+                        >
+                            TOOLS
+                        </button>
+                        <button 
+                            onClick={() => setViewMode('dependency')} 
+                            className="px-4 py-2 bg-orange-600 text-white rounded font-bold"
+                        >
+                            DEPENDENCY
+                        </button>
+                        <button 
+                            onClick={() => setViewMode('timeline')} 
+                            className="px-4 py-2 bg-pink-600 text-white rounded font-bold"
+                        >
+                            TIMELINE
+                        </button>
                     </div>
                     <div className="flex items-center gap-2 bg-green-600/20 border border-green-500 px-4 py-2 rounded-lg font-bold">
-                        <DollarSign className="w-4 h-4 text-green-400" />
-                        <span className="text-green-400">${stats.totalCost.toFixed(4)}</span>
+                        <span className="text-green-400">💰</span>
+                        <span className="text-green-400">${stats.totalCost > 0.0001 ? stats.totalCost.toFixed(4) : stats.totalCost.toFixed(6)}</span>
                     </div>
                 </div>
+            </div>
+            
+            {/* DEBUG: Current view mode */}
+            <div className="bg-yellow-500 text-black p-2 text-center font-bold">
+                CURRENT VIEW MODE: {viewMode.toUpperCase()}
             </div>
 
             <div className="flex-1 flex overflow-hidden">
                 {viewMode === "timeline" && <TimelineView nodes={nodes.map(n => n.data)} onNodeSelect={handleAnalyticsNodeSelect} />}
-                {viewMode === "analytics" && <AnalyticsView nodes={nodes.map(n => n.data)} onNodeSelect={handleAnalyticsNodeSelect} />}
-                {viewMode === "graph" && (
+                {viewMode === "cost" && <CostView nodes={nodes.map(n => n.data)} onNodeSelect={handleAnalyticsNodeSelect} />}
+                {viewMode === "tools" && <ToolsView nodes={nodes.map(n => n.data)} onNodeSelect={handleAnalyticsNodeSelect} />}
+                {viewMode === "dependency" && <DependencyView nodes={nodes.map(n => n.data)} onNodeSelect={handleAnalyticsNodeSelect} />}
+                {viewMode === "flow" && (
                     <>
                         <div className="flex-1 relative">
                             <ReactFlow nodes={nodes} edges={edges} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onNodeClick={handleNodeClick} nodeTypes={nodeTypes} fitView className="bg-slate-950">

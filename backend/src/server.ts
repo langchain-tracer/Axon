@@ -12,11 +12,73 @@ import cors from "cors";
 import dotenv from "dotenv";
 import {
   TraceModel,
-  NodeModel,
-  EdgeModel,
-  AnomalyModel
-} from "./database/models";
-import { TraceEvent } from "./types";
+  NodeModel
+} from "./database/models.js";
+import { db } from "./database/connection.js";
+import { TraceEvent } from "./types/index.js";
+import { storage } from "./storage-sqlite.js";
+
+// Simple anomaly detection for backend
+interface SimpleAnomaly {
+  type: string;
+  severity: string;
+  title: string;
+  description: string;
+  affectedNodes: string[];
+  cost?: number;
+  latency?: number;
+}
+
+function detectSimpleAnomalies(nodes: any[], edges: any[]): SimpleAnomaly[] {
+  const anomalies: SimpleAnomaly[] = [];
+  
+  if (nodes.length === 0) return anomalies;
+
+  // Detect expensive operations
+  const totalCost = nodes.reduce((sum, node) => sum + (node.cost || 0), 0);
+  const avgCost = totalCost / nodes.length;
+  const expensiveThreshold = avgCost * 3;
+
+  const expensiveNodes = nodes.filter(node => (node.cost || 0) > expensiveThreshold);
+  for (const node of expensiveNodes) {
+    anomalies.push({
+      type: 'expensive_operation',
+      severity: (node.cost || 0) > avgCost * 5 ? 'high' : 'medium',
+      title: 'Expensive Operation',
+      description: `Operation costs $${(node.cost || 0).toFixed(6)}, ${((node.cost || 0) / avgCost).toFixed(1)}x average`,
+      affectedNodes: [node.id],
+      cost: node.cost
+    });
+  }
+
+  // Detect redundant tool calls
+  const toolCalls = nodes.filter(node => node.type?.includes('tool_start'));
+  const toolCallGroups = new Map<string, any[]>();
+
+  for (const call of toolCalls) {
+    const key = `${call.toolName}-${call.toolInput}`;
+    if (!toolCallGroups.has(key)) {
+      toolCallGroups.set(key, []);
+    }
+    toolCallGroups.get(key)!.push(call);
+  }
+
+  for (const [key, calls] of toolCallGroups) {
+    if (calls.length > 3) {
+      const [toolName] = key.split('-', 1);
+      anomalies.push({
+        type: 'redundant_calls',
+        severity: calls.length > 5 ? 'high' : 'medium',
+        title: 'Redundant Tool Calls',
+        description: `Tool "${toolName}" called ${calls.length} times with same input`,
+        affectedNodes: calls.map(c => c.id),
+        cost: calls.reduce((sum, c) => sum + (c.cost || 0), 0)
+      });
+    }
+  }
+
+  return anomalies;
+}
 
 dotenv.config();
 
@@ -43,14 +105,126 @@ app.use(express.json());
  * Generate human-readable label for a node
  */
 function generateNodeLabel(node: any, index: number): string {
-  if (node.type === "llm") {
-    return node.data?.model || `LLM Call ${index + 1}`;
-  } else if (node.type === "tool") {
-    return node.data?.toolName || `Tool Call ${index + 1}`;
-  } else if (node.type === "chain") {
-    return node.data?.chainName || `Chain ${index + 1}`;
+  const stepNumber = index + 1;
+  
+  switch (node.type) {
+    case "llm_start":
+      return "LLM Processing";
+    case "llm_end":
+      return "LLM Response";
+    case "tool_start":
+      if (node.toolName) {
+        return `${node.toolName} Call`;
+      }
+      return "Tool Execution";
+    case "tool_end":
+      if (node.toolName) {
+        return `${node.toolName} Result`;
+      }
+      return "Tool Complete";
+    case "chain_start":
+      return "Process Start";
+    case "chain_end":
+      return "Process Complete";
+    case "llm":
+      return node.metadata?.model || `LLM Call ${stepNumber}`;
+    case "tool":
+      return node.toolName || `Tool Call ${stepNumber}`;
+    case "chain":
+      return node.metadata?.chainName || `Chain ${stepNumber}`;
+    default:
+      return `Step ${stepNumber}`;
   }
-  return `Step ${index + 1}`;
+}
+
+/**
+ * Calculate cost for a node based on tokens and model
+ */
+function calculateCost(node: any): number {
+  if (node.cost) return node.cost;
+  
+  // Basic cost calculation based on tokens
+  const tokens = node.tokens;
+  if (!tokens) {
+    // If no token data, estimate based on content
+    return estimateCostFromContent(node);
+  }
+  
+  // Rough cost estimates (these should be configurable)
+  const inputCostPer1k = 0.0015; // $0.0015 per 1k input tokens
+  const outputCostPer1k = 0.002; // $0.002 per 1k output tokens
+  
+  const inputCost = (tokens.input || 0) / 1000 * inputCostPer1k;
+  const outputCost = (tokens.output || 0) / 1000 * outputCostPer1k;
+  
+  return inputCost + outputCost;
+}
+
+/**
+ * Estimate cost based on content when token data is not available
+ */
+function estimateCostFromContent(node: any): number {
+  let inputTokens = 0;
+  let outputTokens = 0;
+  
+  // Estimate tokens based on content
+  if (node.prompt) {
+    inputTokens = Math.ceil(node.prompt.length / 4); // Rough estimate: 4 chars per token
+  }
+  
+  if (node.response) {
+    outputTokens = Math.ceil(node.response.length / 4);
+  }
+  
+  if (node.toolInput) {
+    inputTokens += Math.ceil(node.toolInput.length / 4);
+  }
+  
+  if (node.toolOutput) {
+    outputTokens += Math.ceil(node.toolOutput.length / 4);
+  }
+  
+  // Apply cost rates
+  const inputCostPer1k = 0.0015;
+  const outputCostPer1k = 0.002;
+  
+  return (inputTokens / 1000 * inputCostPer1k) + (outputTokens / 1000 * outputCostPer1k);
+}
+
+/**
+ * Estimate tokens from content when token data is not available
+ */
+function estimateTokensFromContent(node: any): { input: number; output: number; total: number } | undefined {
+  let inputTokens = 0;
+  let outputTokens = 0;
+  
+  // Estimate tokens based on content
+  if (node.prompt) {
+    inputTokens = Math.ceil(node.prompt.length / 4); // Rough estimate: 4 chars per token
+  }
+  
+  if (node.response) {
+    outputTokens = Math.ceil(node.response.length / 4);
+  }
+  
+  if (node.toolInput) {
+    inputTokens += Math.ceil(node.toolInput.length / 4);
+  }
+  
+  if (node.toolOutput) {
+    outputTokens += Math.ceil(node.toolOutput.length / 4);
+  }
+  
+  // Only return token data if we have some content
+  if (inputTokens > 0 || outputTokens > 0) {
+    return {
+      input: inputTokens,
+      output: outputTokens,
+      total: inputTokens + outputTokens
+    };
+  }
+  
+  return undefined;
 }
 
 /**
@@ -139,15 +313,28 @@ app.get("/api/traces", (req, res) => {
       return res.json({ traces: [], total: 0 });
     }
 
+    // Enhance traces with cost and node count
+    const enhancedTraces = traces.map((trace: any) => {
+      const events = db.query("SELECT cost, type FROM events WHERE trace_id = ?", [trace.trace_id]);
+      const totalCost = events.reduce((sum: number, event: any) => sum + (event.cost || 0), 0);
+      const nodeCount = events.length;
+      
+      return {
+        ...trace,
+        cost: totalCost,
+        nodeCount: nodeCount
+      };
+    });
+
     res.json({
-      traces: traces || [], // ← Ensure it's always an array
-      total: (traces || []).length
+      traces: enhancedTraces || [], // ← Ensure it's always an array
+      total: (enhancedTraces || []).length
     });
   } catch (error) {
     console.error("Error listing traces:", error);
     res.status(500).json({
       error: "Failed to list traces",
-      message: error.message // ← Send actual error message
+      message: (error as Error).message
     });
   }
 });
@@ -164,10 +351,55 @@ app.get("/api/traces/:traceId", (req, res) => {
       return res.status(404).json({ error: "Trace not found" });
     }
 
-    // Get related data
-    const nodes = NodeModel.findByTraceId(traceId);
-    const edges = EdgeModel.findByTraceId(traceId);
-    const anomalies = AnomalyModel.findByTraceId(traceId);
+    // Get events and transform them into nodes and edges
+    const events = db.query<any>(
+      "SELECT * FROM events WHERE trace_id = ? ORDER BY timestamp ASC",
+      [traceId]
+    );
+    
+    // Transform events into nodes
+    const nodes = events.map((event, index) => ({
+      id: event.event_id,
+      runId: event.run_id,
+      parentRunId: event.parent_run_id,
+      type: event.type,
+      status: 'complete',
+      startTime: event.timestamp,
+      endTime: event.timestamp + (event.latency || 0),
+      cost: event.cost || 0,
+      latency: event.latency || 0,
+      tokens: event.tokens_total ? {
+        input: event.tokens_prompt || 0,
+        output: event.tokens_completion || 0,
+        total: event.tokens_total
+      } : undefined,
+      prompt: event.prompts,
+      response: event.response,
+      toolName: event.tool_name,
+      toolInput: event.tool_input,
+      toolOutput: event.tool_output,
+      error: event.error,
+      metadata: event.metadata ? JSON.parse(event.metadata) : {},
+      createdAt: new Date(event.created_at)
+    }));
+    
+    // Create edges based on parent-child relationships
+    const edges = events
+      .filter(event => event.parent_run_id)
+      .map(event => {
+        // Find the parent event by run_id
+        const parentEvent = events.find(e => e.run_id === event.parent_run_id);
+        return {
+          id: `edge-${parentEvent?.event_id || event.parent_run_id}-${event.event_id}`,
+          source: parentEvent?.event_id || event.parent_run_id,
+          target: event.event_id,
+          type: 'smoothstep',
+          animated: false
+        };
+      });
+    
+    // Run anomaly detection
+    const anomalies = detectSimpleAnomalies(nodes, edges);
 
     // Sort nodes by start time
     const sortedNodes = nodes.sort((a, b) => a.startTime - b.startTime);
@@ -179,21 +411,21 @@ app.get("/api/traces/:traceId", (req, res) => {
 
       return {
         // Core fields
-        id: node.runId, // Use runId as the display ID
+        id: node.id, // Use event ID as the display ID
         label: label,
         type: node.type,
         status: node.status,
 
         // Metrics
-        cost: node.cost || 0,
+        cost: calculateCost(node),
         latency: node.latency || 0,
         tokens: node.tokens
           ? {
               input: node.tokens.input || 0,
               output: node.tokens.output || 0,
-              total: node.tokens.total || 0
+              total: node.tokens.total || (node.tokens.input || 0) + (node.tokens.output || 0)
             }
-          : undefined,
+          : estimateTokensFromContent(node),
 
         // Timing
         timestamp: node.startTime,
@@ -205,13 +437,13 @@ app.get("/api/traces/:traceId", (req, res) => {
         y: position.y,
 
         // Type-specific data
-        prompt: node.data?.prompts?.[0],
-        response: node.data?.response,
-        model: node.data?.model,
-        toolName: node.data?.toolName,
-        toolParams: node.data?.input,
-        toolResponse: node.data?.output,
-        chainName: node.data?.chainName,
+        prompt: node.prompt,
+        response: node.response,
+        model: node.metadata?.model || 'unknown',
+        toolName: node.toolName,
+        toolInput: node.toolInput,
+        toolOutput: node.toolOutput,
+        chainName: node.metadata?.chainName || 'unknown',
 
         // Relationships
         parentRunId: node.parentRunId,
@@ -221,7 +453,7 @@ app.get("/api/traces/:traceId", (req, res) => {
 
         // Anomaly detection
         hasLoop: anomalies.some(
-          (a) => a.type === "loop" && a.nodes?.includes(node.runId)
+          (a) => a.type === "loop" && a.affectedNodes?.includes(node.runId)
         )
       };
     });
@@ -230,12 +462,14 @@ app.get("/api/traces/:traceId", (req, res) => {
     const latency = calculateTraceLatency(trace);
 
     // Enhanced trace object
+    const totalCost = nodes.reduce((sum, node) => sum + (node.cost || 0), 0);
+    
     const enhancedTrace = {
       ...trace,
       project: trace.projectName || "default",
       timestamp: trace.startTime,
       nodeCount: trace.totalNodes || nodes.length,
-      cost: trace.totalCost || 0,
+      cost: totalCost,
       latency: latency,
       description: generateTraceDescription(trace, nodes)
     };
@@ -247,11 +481,11 @@ app.get("/api/traces/:traceId", (req, res) => {
       anomalies: anomalies,
       stats: {
         totalNodes: nodes.length,
-        totalCost: trace.totalCost || 0,
+        totalCost: nodes.reduce((sum, node) => sum + (node.cost || 0), 0),
         totalLatency: latency,
-        llmCount: nodes.filter((n) => n.type === "llm").length,
-        toolCount: nodes.filter((n) => n.type === "tool").length,
-        chainCount: nodes.filter((n) => n.type === "chain").length,
+        llmCount: nodes.filter((n) => n.type.includes("llm")).length,
+        toolCount: nodes.filter((n) => n.type.includes("tool")).length,
+        chainCount: nodes.filter((n) => n.type.includes("chain")).length,
         errorCount: nodes.filter((n) => n.status === "error").length,
         anomalyCount: anomalies.length
       }
@@ -372,6 +606,30 @@ app.get("/api/projects", (req, res) => {
 });
 
 // ============================================================================
+// HELPER FUNCTIONS
+// ============================================================================
+
+/**
+ * Map OpenAI event types to standard trace event types
+ */
+function mapOpenAIEventType(openaiType: string): string {
+  switch (openaiType) {
+    case 'function_call_start':
+      return 'llm_start';
+    case 'function_call_end':
+      return 'llm_end';
+    case 'tool_selection':
+      return 'tool_start';
+    case 'conversation_turn':
+      return 'llm_end';
+    case 'error':
+      return 'error';
+    default:
+      return 'custom';
+  }
+}
+
+// ============================================================================
 // SOCKET.IO CONNECTION HANDLING
 // ============================================================================
 
@@ -394,7 +652,7 @@ io.on("connection", (socket) => {
       console.log(`📥 Received ${events.length} events from ${socket.id}`);
 
       // Process each event (assuming you have a processor)
-      // storage.addEvents(events);
+      storage.addEvents(events);
 
       // Broadcast to dashboard clients (for real-time updates)
       for (const event of events) {
@@ -421,6 +679,53 @@ io.on("connection", (socket) => {
     }
   });
 
+  // Handle OpenAI events
+  socket.on("openai_events", async (data: any) => {
+    try {
+      const { traceId, projectName, events, metadata } = data;
+      
+      console.log(`📥 Received ${events.length} OpenAI events from ${socket.id} for trace: ${traceId}`);
+
+      // Convert OpenAI events to standard trace events
+      const traceEvents: TraceEvent[] = events.map((event: any) => ({
+        eventId: event.eventId,
+        traceId: event.traceId,
+        runId: event.eventId, // Use eventId as runId for OpenAI events
+        type: mapOpenAIEventType(event.type),
+        timestamp: event.timestamp,
+        data: event.data,
+        metadata: {
+          projectName,
+          ...metadata,
+          ...event.metadata
+        }
+      }));
+
+      // Process the converted events
+      for (const event of traceEvents) {
+        storage.addEvents([event]);
+
+        // Broadcast to dashboard clients
+        io.to(`trace:${event.traceId}`).emit("trace_update", {
+          traceId: event.traceId,
+          event
+        });
+      }
+
+      // Send acknowledgment
+      socket.emit("openai_events_ack", {
+        received: events.length,
+        timestamp: Date.now()
+      });
+
+    } catch (error) {
+      console.error("❌ Error handling OpenAI events:", error);
+      socket.emit("openai_events_error", {
+        error: "Failed to process OpenAI events"
+      });
+    }
+  });
+
   // Join trace room (for dashboard to receive updates)
   socket.on("watch_trace", (traceId: string) => {
     socket.join(`trace:${traceId}`);
@@ -430,17 +735,187 @@ io.on("connection", (socket) => {
     try {
       const trace = TraceModel.findById(traceId);
       if (trace) {
-        const nodes = NodeModel.findByTraceId(traceId);
-        const edges = EdgeModel.findByTraceId(traceId);
+        // Get events from the events table and transform them to nodes/edges
+        const events = db.query("SELECT * FROM events WHERE trace_id = ? ORDER BY timestamp ASC", [traceId]);
+        
+        if (events.length === 0) {
+          socket.emit("trace_data", {
+            trace,
+            nodes: [],
+            edges: [],
+            anomalies: [],
+            stats: {
+              totalNodes: 0,
+              totalCost: 0,
+              totalLatency: 0,
+              llmCount: 0,
+              toolCount: 0,
+              chainCount: 0,
+              errorCount: 0,
+              anomalyCount: 0
+            }
+          });
+          return;
+        }
+
+        // Transform events to nodes (same logic as the API endpoint)
+        const sortedNodes = events.map((event: any) => ({
+          id: event.event_id,
+          type: event.type,
+          status: "complete", // Events are always complete when stored
+          startTime: event.timestamp,
+          endTime: event.timestamp, // Events don't have separate end times
+          latency: event.latency || 0,
+          runId: event.run_id,
+          parentRunId: event.parent_run_id,
+          prompt: event.prompts ? JSON.parse(event.prompts) : undefined,
+          response: event.response,
+          toolName: event.tool_name,
+          toolInput: event.tool_input ? JSON.parse(event.tool_input) : undefined,
+          toolOutput: event.tool_output,
+          metadata: event.metadata ? JSON.parse(event.metadata) : {},
+          tokens: event.tokens_prompt ? {
+            input: event.tokens_prompt,
+            output: event.tokens_completion,
+            total: event.tokens_total
+          } : undefined,
+          cost: event.cost || 0,
+          error: event.error
+        }));
+
+        // Calculate positions for nodes
+        const calculateNodePosition = (index: number) => ({
+          x: (index % 3) * 300 + 100,
+          y: Math.floor(index / 3) * 200 + 100
+        });
+
+        // Generate node labels
+        const generateNodeLabel = (node: any, index: number): string => {
+          const stepNumber = index + 1;
+          switch (node.type) {
+            case "llm_start":
+              return "LLM Processing";
+            case "llm_end":
+              return "LLM Response";
+            case "tool_start":
+              if (node.toolName) {
+                return `${node.toolName} Call`;
+              }
+              return "Tool Execution";
+            case "tool_end":
+              if (node.toolName) {
+                return `${node.toolName} Result`;
+              }
+              return "Tool Complete";
+            case "chain_start":
+              return "Process Start";
+            case "chain_end":
+              return "Process Complete";
+            default:
+              return `Step ${stepNumber}`;
+          }
+        };
+
+        // Calculate cost
+        const calculateCost = (node: any): number => {
+          if (node.cost) return node.cost;
+          const tokens = node.tokens;
+          if (!tokens) return 0;
+          const inputCostPer1k = 0.0015;
+          const outputCostPer1k = 0.002;
+          const inputCost = (tokens.input || 0) / 1000 * inputCostPer1k;
+          const outputCost = (tokens.output || 0) / 1000 * outputCostPer1k;
+          return inputCost + outputCost;
+        };
+
+        // Estimate tokens from content
+        const estimateTokensFromContent = (node: any): { input: number; output: number; total: number } | undefined => {
+          let inputTokens = 0;
+          let outputTokens = 0;
+          if (node.prompt) inputTokens = Math.ceil(node.prompt.length / 4);
+          if (node.response) outputTokens = Math.ceil(node.response.length / 4);
+          if (node.toolInput) inputTokens += Math.ceil(node.toolInput.length / 4);
+          if (node.toolOutput) outputTokens += Math.ceil(node.toolOutput.length / 4);
+          if (inputTokens > 0 || outputTokens > 0) {
+            return { input: inputTokens, output: outputTokens, total: inputTokens + outputTokens };
+          }
+          return undefined;
+        };
+
+        // Transform to enhanced nodes
+        const enhancedNodes = sortedNodes.map((node, index) => {
+          const position = calculateNodePosition(index);
+          const label = generateNodeLabel(node, index);
+          return {
+            id: node.id,
+            label: label,
+            type: node.type,
+            status: node.status,
+            cost: calculateCost(node),
+            latency: node.latency || 0,
+            tokens: node.tokens || estimateTokensFromContent(node),
+            timestamp: node.startTime,
+            startTime: node.startTime,
+            endTime: node.endTime,
+            x: position.x,
+            y: position.y,
+            prompt: node.prompt,
+            response: node.response,
+            model: node.metadata?.model || 'unknown',
+            toolName: node.toolName,
+            toolInput: node.toolInput,
+            toolOutput: node.toolOutput,
+            chainName: node.metadata?.chainName || 'unknown',
+            parentRunId: node.parentRunId,
+            error: node.error,
+            hasLoop: false
+          };
+        });
+
+        // Create edges
+        const edges = events
+          .filter(event => event.parent_run_id)
+          .map(event => {
+            const parentEvent = events.find(e => e.run_id === event.parent_run_id);
+            return {
+              id: `edge-${parentEvent?.event_id || event.parent_run_id}-${event.event_id}`,
+              source: parentEvent?.event_id || event.parent_run_id,
+              target: event.event_id,
+              type: 'smoothstep',
+              animated: false
+            };
+          });
+
+        // Calculate stats
+        const totalCost = enhancedNodes.reduce((sum, node) => sum + (node.cost || 0), 0);
+        const totalLatency = enhancedNodes.reduce((sum, node) => sum + (node.latency || 0), 0);
+        const llmCount = enhancedNodes.filter(n => n.type.includes("llm")).length;
+        const toolCount = enhancedNodes.filter(n => n.type.includes("tool")).length;
+        const chainCount = enhancedNodes.filter(n => n.type.includes("chain")).length;
+        const errorCount = enhancedNodes.filter(n => n.status === "error").length;
 
         socket.emit("trace_data", {
           trace,
-          nodes,
-          edges
+          nodes: enhancedNodes,
+          edges,
+          anomalies: [],
+          stats: {
+            totalNodes: enhancedNodes.length,
+            totalCost,
+            totalLatency,
+            llmCount,
+            toolCount,
+            chainCount,
+            errorCount,
+            anomalyCount: 0
+          }
         });
+      } else {
+        socket.emit("error", { message: "Trace not found" });
       }
     } catch (error) {
       console.error(`Error sending trace data for ${traceId}:`, error);
+      socket.emit("error", { message: "Failed to load trace data" });
     }
   });
 

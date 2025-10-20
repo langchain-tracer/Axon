@@ -3,6 +3,7 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { Node, Edge } from "reactflow";
+import { io, Socket } from "socket.io-client";
 import type {
   UseTraceDataOptions,
   UseAnomalyDetectionOptions,
@@ -89,48 +90,53 @@ interface RealtimeUpdate {
   traceId: string;
   nodeId?: string;
   data?: any;
+  timestamp?: number;
 }
 
 export const useRealtimeUpdates = (traceId: string | null) => {
   const [connected, setConnected] = useState(false);
   const [lastUpdate, setLastUpdate] = useState<RealtimeUpdate | null>(null);
-  const wsRef = useRef<WebSocket | null>(null);
-  const reconnectTimeoutRef = useRef<NodeJS.Timeout>();
+  const wsRef = useRef<Socket | null>(null);
+  const reconnectTimeoutRef = useRef<number>();
 
   const connect = useCallback(() => {
     if (!traceId) return;
 
-    const ws = new WebSocket(`ws://localhost:3001/ws`);
-    wsRef.current = ws;
+    const socket = io("http://localhost:3000", {
+      auth: {
+        projectName: "dashboard"
+      }
+    });
+    wsRef.current = socket;
 
-    ws.onopen = () => {
-      console.log("WebSocket connected");
+    socket.on("connect", () => {
+      console.log("Socket.IO connected:", socket.id);
       setConnected(true);
 
       // Subscribe to trace updates
-      ws.send(
-        JSON.stringify({
-          type: "subscribe",
-          traceId
-        })
-      );
-    };
+      socket.emit("watch_trace", traceId);
+    });
 
-    ws.onmessage = (event) => {
-      try {
-        const update: RealtimeUpdate = JSON.parse(event.data);
-        setLastUpdate(update);
-      } catch (err) {
-        console.error("Error parsing WebSocket message:", err);
-      }
-    };
+    socket.on("trace_data", (data) => {
+      setLastUpdate({
+        type: "trace_complete",
+        traceId: traceId,
+        timestamp: Date.now(),
+        data: data
+      });
+    });
 
-    ws.onerror = (error) => {
-      console.error("WebSocket error:", error);
-    };
+    socket.on("new_event", (event) => {
+      setLastUpdate({
+        type: "node_complete",
+        traceId: traceId,
+        timestamp: Date.now(),
+        data: event
+      });
+    });
 
-    ws.onclose = () => {
-      console.log("WebSocket disconnected");
+    socket.on("disconnect", () => {
+      console.log("Socket.IO disconnected");
       setConnected(false);
 
       // Attempt to reconnect after 3 seconds
@@ -138,10 +144,10 @@ export const useRealtimeUpdates = (traceId: string | null) => {
         console.log("Attempting to reconnect...");
         connect();
       }, 3000);
-    };
+    });
 
     return () => {
-      ws.close();
+      socket.disconnect();
       if (reconnectTimeoutRef.current) {
         clearTimeout(reconnectTimeoutRef.current);
       }
@@ -186,7 +192,14 @@ export const useKeyboardShortcuts = (handlers: ShortcutHandlers) => {
 // useAnomalyDetection - Detect anomalies in trace
 // ============================================================================
 
-import { detectAllAnomalies } from "../utils/AnomalyDetection";
+import { AnomalyDetector, Anomaly as DetectionAnomaly } from "../utils/AnomalyDetection";
+
+// Fix NodeJS namespace issue
+declare global {
+  namespace NodeJS {
+    interface Timeout {}
+  }
+}
 
 
 export const useAnomalyDetection = (
@@ -194,7 +207,7 @@ export const useAnomalyDetection = (
   options: UseAnomalyDetectionOptions = {}
 ) => {
   const { enabled = true, config, budgets } = options;
-  const [anomalies, setAnomalies] = useState<Anomaly[]>([]);
+  const [anomalies, setAnomalies] = useState<DetectionAnomaly[]>([]);
 
   useEffect(() => {
     if (!enabled || nodes.length === 0) {
@@ -202,8 +215,9 @@ export const useAnomalyDetection = (
       return;
     }
 
-    const detected = detectAllAnomalies(nodes, { config, budgets });
-    setAnomalies(detected);
+    const detector = new AnomalyDetector(nodes, []);
+    const result = detector.detectAnomalies();
+    setAnomalies(result.anomalies);
   }, [nodes, enabled, config, budgets]);
 
   const dismissAnomaly = useCallback((anomalyId: string) => {

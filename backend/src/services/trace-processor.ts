@@ -8,12 +8,31 @@ import { TraceModel, NodeModel, EdgeModel } from "../database/models.js";
 import { TraceEvent, Node } from "../types/index.js";
 import { logger } from "../utils/logger.js";
 
+/**
+ * Trace Processor for handling and storing trace events
+ * 
+ * This class processes incoming trace events from various sources (LangChain, OpenAI, etc.)
+ * and stores them in the SQLite database. It maintains the relationship between start/end
+ * events and constructs the trace graph for visualization.
+ * 
+ * Features:
+ * - Event correlation and validation
+ * - Database storage with proper relationships
+ * - Trace statistics calculation
+ * - Error handling and logging
+ */
 export class TraceProcessor {
   private activeTraces: Map<string, string> = new Map();
   private pendingNodes: Map<string, Partial<Node>> = new Map();
 
   /**
-   * Process incoming trace event
+   * Processes incoming trace events and routes them to appropriate handlers
+   * 
+   * This is the main entry point for all trace events. It validates the event
+   * type and delegates to the appropriate handler method.
+   * 
+   * @param event - The trace event to process
+   * @throws Error if event processing fails
    */
   async processEvent(event: TraceEvent): Promise<void> {
     try {
@@ -38,6 +57,9 @@ export class TraceProcessor {
           break;
         case "error": // NEW
           await this.handleError(event);
+          break;
+        case "custom": // OpenAI custom events
+          await this.handleCustomEvent(event);
           break;
         default:
           logger.debug("Unhandled event type:", event.type);
@@ -298,5 +320,26 @@ export class TraceProcessor {
       runId: event.runId,
       error: event.error
     });
+  }
+
+  private async handleCustomEvent(event: any): Promise<void> {
+    await this.ensureTraceExists(event);
+
+    const node: Node = {
+      id: uuidv4(),
+      traceId: event.traceId,
+      runId: event.runId,
+      parentRunId: event.parentRunId,
+      type: "custom",
+      status: "complete",
+      startTime: event.timestamp,
+      endTime: event.timestamp,
+      latency: 0,
+      data: event.data,
+      metadata: event.metadata || {}
+    };
+
+    await NodeModel.create(node);
+    logger.debug("Custom node created:", { nodeId: node.id, traceId: event.traceId });
   }
 }

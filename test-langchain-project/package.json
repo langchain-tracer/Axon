@@ -1,0 +1,23 @@
+{
+  "name": "test-langchain-project",
+  "version": "1.0.0",
+  "description": "Test project for Agent Trace Visualizer",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "start": "node mock-test.js",
+    "test": "node test-agent.js",
+    "agent-trace:start": "agent-trace start",
+    "agent-trace:status": "agent-trace status",
+    "agent-trace:stop": "agent-trace stop"
+  },
+  "dependencies": {
+    "@langchain/openai": "^0.0.14",
+    "@langchain/core": "^0.1.0",
+    "langchain": "^0.1.0",
+    "@agent-trace/langchain-tracer": "file:../packages/langchain-tracer"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0"
+  }
+}
