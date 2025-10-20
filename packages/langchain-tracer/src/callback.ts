@@ -20,6 +20,19 @@ import {
   ErrorEvent
 } from "./types";
 
+/**
+ * LangChain callback handler for tracing agent execution
+ * 
+ * This class extends LangChain's BaseCallbackHandler to automatically capture
+ * and send trace events to the Agent Trace Visualizer backend. It tracks:
+ * - LLM start/end events with prompts and responses
+ * - Tool execution with inputs and outputs
+ * - Chain execution flow
+ * - Error events and debugging information
+ * 
+ * The handler maintains a map of run data to correlate start/end events
+ * and provides real-time tracing capabilities for LangChain applications.
+ */
 export class TracingCallbackHandler extends BaseCallbackHandler {
   name = "agent_trace_handler";
 
@@ -28,6 +41,15 @@ export class TracingCallbackHandler extends BaseCallbackHandler {
   private runDataMap: Map<string, RunData> = new Map();
   private config: TraceConfig;
 
+  /**
+   * Creates a new TracingCallbackHandler instance
+   * 
+   * @param config - Optional configuration object
+   * @param config.endpoint - Backend server endpoint (default: "http://localhost:8000")
+   * @param config.projectName - Project name for organizing traces (default: "default")
+   * @param config.debug - Enable debug logging (default: false)
+   * @param config.metadata - Additional metadata to include with all events
+   */
   constructor(config?: Partial<TraceConfig>) {
     super();
 
@@ -54,7 +76,19 @@ export class TracingCallbackHandler extends BaseCallbackHandler {
   }
 
   /**
-   * Called when LLM starts running
+   * Called when an LLM starts running
+   * 
+   * This method is automatically invoked by LangChain when an LLM begins processing.
+   * It captures the LLM configuration, prompts, and metadata, then sends a start
+   * event to the backend for visualization.
+   * 
+   * @param llm - Serialized LLM configuration object
+   * @param prompts - Array of input prompts being sent to the LLM
+   * @param runId - Unique identifier for this LLM run
+   * @param parentRunId - Optional parent run ID for nested operations
+   * @param extraParams - Additional parameters passed to the LLM
+   * @param tags - Optional tags for categorizing the run
+   * @param metadata - Optional metadata to include with the event
    */
   async handleLLMStart(
     llm: Serialized,
@@ -112,7 +146,14 @@ export class TracingCallbackHandler extends BaseCallbackHandler {
   }
 
   /**
-   * Called when LLM ends running
+   * Called when an LLM finishes running
+   * 
+   * This method is automatically invoked by LangChain when an LLM completes processing.
+   * It captures the output, calculates execution time, and sends an end event to the
+   * backend. It correlates with the corresponding start event using the runId.
+   * 
+   * @param output - LLMResult containing the generated responses and token usage
+   * @param runId - Unique identifier matching the corresponding start event
    */
   async handleLLMEnd(output: LLMResult, runId: string): Promise<void> {
     console.log(runId, "runID");
@@ -151,7 +192,18 @@ export class TracingCallbackHandler extends BaseCallbackHandler {
   }
 
   /**
-   * Called when tool starts running
+   * Called when a tool starts running
+   * 
+   * This method is automatically invoked by LangChain when a tool begins execution.
+   * It captures the tool configuration, input parameters, and metadata, then sends
+   * a tool start event to the backend for visualization.
+   * 
+   * @param tool - Serialized tool configuration or tool name string
+   * @param input - Input parameters passed to the tool
+   * @param runId - Unique identifier for this tool run
+   * @param parentRunId - Optional parent run ID for nested operations
+   * @param tags - Optional tags for categorizing the run
+   * @param metadata - Optional metadata to include with the event
    */
   async handleToolStart(
     tool: Serialized,
@@ -161,8 +213,14 @@ export class TracingCallbackHandler extends BaseCallbackHandler {
     tags?: string[],
     metadata?: Record<string, any>
   ): Promise<void> {
-    const serialized = EventSerializer.serializeSerialized(tool);
-    const toolName = serialized.name;
+    // Handle both string tool names and serialized tool objects
+    let toolName: string;
+    if (typeof tool === 'string') {
+      toolName = tool;
+    } else {
+      const serialized = EventSerializer.serializeSerialized(tool);
+      toolName = serialized.name;
+    }
     console.log("handleToolStart is running");
     // Store run data
     this.runDataMap.set(runId, {
@@ -198,7 +256,14 @@ export class TracingCallbackHandler extends BaseCallbackHandler {
   }
 
   /**
-   * Called when tool ends running
+   * Called when a tool finishes running
+   * 
+   * This method is automatically invoked by LangChain when a tool completes execution.
+   * It captures the output, calculates execution time, and sends a tool end event to
+   * the backend. It correlates with the corresponding start event using the runId.
+   * 
+   * @param output - The output result from the tool execution
+   * @param runId - Unique identifier matching the corresponding start event
    */
   async handleToolEnd(output: string, runId: string): Promise<void> {
     const runData = this.runDataMap.get(runId);
@@ -209,6 +274,9 @@ export class TracingCallbackHandler extends BaseCallbackHandler {
 
     const endTime = Date.now();
     const latency = endTime - runData.startTime;
+
+    // Calculate tool cost (tools typically have minimal execution costs)
+    const toolCost = EventSerializer.calculateToolCost(runData.data.toolName, latency);
 
     // Update run data
     runData.endTime = endTime;
@@ -224,6 +292,7 @@ export class TracingCallbackHandler extends BaseCallbackHandler {
       type: "tool_end",
       toolName: runData.data.toolName,
       output,
+      cost: toolCost,
       latency
     };
 

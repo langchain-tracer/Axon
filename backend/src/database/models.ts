@@ -66,14 +66,14 @@ export class TraceModel {
 
     values.push(traceId);
 
-    db.run(`UPDATE traces SET ${fields.join(", ")} WHERE id = ?`, values);
+    db.run(`UPDATE traces SET ${fields.join(", ")} WHERE trace_id = ?`, values);
   }
 
   /**
    * Get trace by ID
    */
   static findById(traceId: string): Trace | null {
-    const row = db.get<any>("SELECT * FROM traces WHERE id = ?", [traceId]);
+    const row = db.get<any>("SELECT * FROM traces WHERE trace_id = ?", [traceId]);
 
     if (!row) return null;
 

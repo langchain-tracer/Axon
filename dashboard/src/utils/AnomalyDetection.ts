@@ -1,539 +1,382 @@
-import { Node } from "reactflow";
-
-// ============================================================================
-// TYPES
-// ============================================================================
-
 export interface Anomaly {
   id: string;
-  nodeId: string;
-  type:
-    | "loop"
-    | "cost-spike"
-    | "contradiction"
-    | "timeout-risk"
-    | "token-spike"
-    | "slow-operation";
-  severity: "high" | "medium" | "low";
-  message: string;
-  suggestion: string;
+  type: 'loop' | 'contradiction' | 'expensive_operation' | 'redundant_calls' | 'error_pattern' | 'performance_issue';
+  severity: 'low' | 'medium' | 'high' | 'critical';
+  title: string;
+  description: string;
+  affectedNodes: string[];
   cost?: number;
-  metadata?: Record<string, any>;
+  latency?: number;
+  suggestions: string[];
+  confidence: number; // 0-1
 }
 
-interface TraceNodeData {
-  label: string;
-  type: "llm" | "tool" | "decision";
-  cost: number;
-  tokens?: { input: number; output: number };
-  latency: number;
-  status: "complete" | "running" | "error" | "pending";
-  prompt?: string;
-  response?: string;
-  toolParams?: Record<string, any>;
-  toolResult?: any;
-  timestamp: number;
+export interface AnomalyDetectionResult {
+  anomalies: Anomaly[];
+  summary: {
+    total: number;
+    byType: Record<string, number>;
+    bySeverity: Record<string, number>;
+    totalCostImpact: number;
+    totalLatencyImpact: number;
+  };
 }
 
-interface DetectionConfig {
-  loopThreshold?: number;
-  costSpikeMultiplier?: number;
-  latencySpikeMultiplier?: number;
-  tokenSpikeMultiplier?: number;
-  similarityThreshold?: number;
-}
+export class AnomalyDetector {
+  private nodes: any[];
+  private edges: any[];
 
-// ============================================================================
-// LOOP DETECTION
-// ============================================================================
+  constructor(nodes: any[], edges: any[]) {
+    this.nodes = nodes;
+    this.edges = edges;
+  }
 
-export const detectLoops = (
-  nodes: Node<TraceNodeData>[],
-  config: DetectionConfig = {}
-): Anomaly[] => {
-  const { loopThreshold = 3, similarityThreshold = 0.9 } = config;
-  const anomalies: Anomaly[] = [];
+  detectAnomalies(): AnomalyDetectionResult {
+    const anomalies: Anomaly[] = [];
 
-  // Group by tool name
-  const toolCalls = nodes.filter((n) => n.data.type === "tool");
-  const callGroups = new Map<string, Node<TraceNodeData>[]>();
+    // Detect different types of anomalies
+    anomalies.push(...this.detectLoops());
+    anomalies.push(...this.detectContradictions());
+    anomalies.push(...this.detectExpensiveOperations());
+    anomalies.push(...this.detectRedundantCalls());
+    anomalies.push(...this.detectErrorPatterns());
+    anomalies.push(...this.detectPerformanceIssues());
 
-  toolCalls.forEach((node) => {
-    const key = node.data.label;
-    if (!callGroups.has(key)) callGroups.set(key, []);
-    callGroups.get(key)!.push(node);
-  });
+    // Calculate summary
+    const summary = this.calculateSummary(anomalies);
 
-  // Check each group for loops
-  callGroups.forEach((calls, toolName) => {
-    if (calls.length <= loopThreshold) return;
+    return {
+      anomalies,
+      summary
+    };
+  }
 
-    // Check for identical or similar parameters
-    const paramGroups = new Map<string, Node<TraceNodeData>[]>();
+  private detectLoops(): Anomaly[] {
+    const anomalies: Anomaly[] = [];
+    const visited = new Set<string>();
+    const recursionStack = new Set<string>();
 
-    calls.forEach((call) => {
-      const paramStr = JSON.stringify(call.data.toolParams || {});
-      if (!paramGroups.has(paramStr)) paramGroups.set(paramStr, []);
-      paramGroups.get(paramStr)!.push(call);
-    });
+    // Find cycles in the graph
+    const findCycles = (nodeId: string, path: string[]): string[][] => {
+      if (recursionStack.has(nodeId)) {
+        const cycleStart = path.indexOf(nodeId);
+        return [path.slice(cycleStart)];
+      }
 
-    paramGroups.forEach((group, paramStr) => {
-      if (group.length > loopThreshold) {
-        const totalCost = group.reduce((sum, n) => sum + n.data.cost, 0);
-        const wastedCost = (totalCost * (group.length - 1)) / group.length;
+      if (visited.has(nodeId)) {
+        return [];
+      }
 
-        anomalies.push({
-          id: `loop_${toolName}_${Date.now()}`,
-          nodeId: group[0].id,
-          type: "loop",
-          severity: "high",
-          message: `${toolName} called ${group.length} times with identical parameters`,
-          suggestion: `Add circuit breaker: after ${loopThreshold} identical calls, cache results or raise error. Consider adding a retry counter with exponential backoff.`,
-          cost: wastedCost,
-          metadata: {
-            callCount: group.length,
-            params: paramStr,
-            nodeIds: group.map((n) => n.id)
+      visited.add(nodeId);
+      recursionStack.add(nodeId);
+
+      const cycles: string[][] = [];
+      const outgoingEdges = this.edges.filter(edge => edge.source === nodeId);
+
+      for (const edge of outgoingEdges) {
+        const newPath = [...path, nodeId];
+        cycles.push(...findCycles(edge.target, newPath));
+      }
+
+      recursionStack.delete(nodeId);
+      return cycles;
+    };
+
+    // Check for cycles starting from each node
+    for (const node of this.nodes) {
+      if (!visited.has(node.id)) {
+        const cycles = findCycles(node.id, []);
+        for (const cycle of cycles) {
+          if (cycle.length > 2) { // Only report cycles with more than 2 nodes
+            anomalies.push({
+              id: `loop-${cycle.join('-')}`,
+              type: 'loop',
+              severity: cycle.length > 5 ? 'high' : 'medium',
+              title: `Infinite Loop Detected`,
+              description: `A potential infinite loop detected involving ${cycle.length} nodes: ${cycle.join(' → ')}`,
+              affectedNodes: cycle,
+              suggestions: [
+                'Add loop detection and break conditions',
+                'Implement maximum iteration limits',
+                'Review the decision logic that leads to this cycle',
+                'Consider adding timeout mechanisms'
+              ],
+              confidence: 0.8
+            });
           }
+        }
+      }
+    }
+
+    // Detect repeated tool calls with same input
+    const toolCalls = this.nodes.filter(node => node.type?.includes('tool_start'));
+    const toolCallGroups = new Map<string, any[]>();
+
+    for (const call of toolCalls) {
+      const key = `${call.toolName}-${call.toolInput}`;
+      if (!toolCallGroups.has(key)) {
+        toolCallGroups.set(key, []);
+      }
+      toolCallGroups.get(key)!.push(call);
+    }
+
+    for (const [key, calls] of toolCallGroups) {
+      if (calls.length > 3) {
+        const [toolName, toolInput] = key.split('-', 2);
+        anomalies.push({
+          id: `redundant-tool-${key}`,
+          type: 'redundant_calls',
+          severity: calls.length > 5 ? 'high' : 'medium',
+          title: `Redundant Tool Calls`,
+          description: `Tool "${toolName}" called ${calls.length} times with the same input: "${toolInput}"`,
+          affectedNodes: calls.map(c => c.id),
+          cost: calls.reduce((sum, c) => sum + (c.cost || 0), 0),
+          suggestions: [
+            'Implement result caching for this tool',
+            'Add deduplication logic before tool calls',
+            'Review why the same input is being processed multiple times',
+            'Consider batching similar requests'
+          ],
+          confidence: 0.9
         });
       }
+    }
+
+    return anomalies;
+  }
+
+  private detectContradictions(): Anomaly[] {
+    const anomalies: Anomaly[] = [];
+    
+    // Look for contradictory LLM responses
+    const llmResponses = this.nodes.filter(node => node.type === 'llm_end' && node.response);
+    
+    for (let i = 0; i < llmResponses.length - 1; i++) {
+      for (let j = i + 1; j < llmResponses.length; j++) {
+        const response1 = llmResponses[i].response.toLowerCase();
+        const response2 = llmResponses[j].response.toLowerCase();
+        
+        // Simple contradiction detection based on keywords
+        const contradictions = [
+          ['yes', 'no'], ['true', 'false'], ['correct', 'incorrect'],
+          ['valid', 'invalid'], ['success', 'failure'], ['pass', 'fail'],
+          ['enable', 'disable'], ['allow', 'deny'], ['accept', 'reject']
+        ];
+
+        for (const [positive, negative] of contradictions) {
+          if ((response1.includes(positive) && response2.includes(negative)) ||
+              (response1.includes(negative) && response2.includes(positive))) {
+            anomalies.push({
+              id: `contradiction-${llmResponses[i].id}-${llmResponses[j].id}`,
+              type: 'contradiction',
+              severity: 'medium',
+              title: `Contradictory Responses`,
+              description: `LLM responses contain contradictory information: "${positive}" vs "${negative}"`,
+              affectedNodes: [llmResponses[i].id, llmResponses[j].id],
+              suggestions: [
+                'Review the prompts to ensure consistency',
+                'Add validation logic to catch contradictions',
+                'Implement response comparison checks',
+                'Consider using a single source of truth for decisions'
+              ],
+              confidence: 0.6
+            });
+            break;
+          }
+        }
+      }
+    }
+
+    return anomalies;
+  }
+
+  private detectExpensiveOperations(): Anomaly[] {
+    const anomalies: Anomaly[] = [];
+    
+    if (this.nodes.length === 0) return anomalies;
+
+    const totalCost = this.nodes.reduce((sum, node) => sum + (node.cost || 0), 0);
+    const avgCost = totalCost / this.nodes.length;
+    const expensiveThreshold = avgCost * 3; // 3x average cost
+
+    // Find expensive operations
+    const expensiveNodes = this.nodes.filter(node => (node.cost || 0) > expensiveThreshold);
+    
+    for (const node of expensiveNodes) {
+      anomalies.push({
+        id: `expensive-${node.id}`,
+        type: 'expensive_operation',
+        severity: (node.cost || 0) > avgCost * 5 ? 'high' : 'medium',
+        title: `Expensive Operation`,
+        description: `Operation "${node.label || node.type}" costs $${(node.cost || 0).toFixed(6)}, which is ${((node.cost || 0) / avgCost).toFixed(1)}x the average cost`,
+        affectedNodes: [node.id],
+        cost: node.cost,
+        suggestions: [
+          'Consider using a more cost-effective model for this operation',
+          'Optimize the prompt to reduce token usage',
+          'Implement caching for similar operations',
+          'Review if this operation is necessary'
+        ],
+        confidence: 0.8
+      });
+    }
+
+    // Detect high token usage
+    const highTokenNodes = this.nodes.filter(node => 
+      node.tokens && (node.tokens.total || 0) > 1000
+    );
+
+    for (const node of highTokenNodes) {
+      anomalies.push({
+        id: `high-tokens-${node.id}`,
+        type: 'expensive_operation',
+        severity: (node.tokens?.total || 0) > 2000 ? 'high' : 'medium',
+        title: `High Token Usage`,
+        description: `Operation "${node.label || node.type}" uses ${node.tokens?.total || 0} tokens`,
+        affectedNodes: [node.id],
+        cost: node.cost,
+        suggestions: [
+          'Optimize prompts to be more concise',
+          'Use few-shot examples instead of long explanations',
+          'Consider breaking down complex operations',
+          'Implement prompt templates for common patterns'
+        ],
+        confidence: 0.7
+      });
+    }
+
+    return anomalies;
+  }
+
+  private detectRedundantCalls(): Anomaly[] {
+    const anomalies: Anomaly[] = [];
+    
+    // Group nodes by type and similar content
+    const nodeGroups = new Map<string, any[]>();
+    
+    for (const node of this.nodes) {
+      const key = `${node.type}-${this.normalizeContent(node.prompt || node.toolInput || '')}`;
+      if (!nodeGroups.has(key)) {
+        nodeGroups.set(key, []);
+      }
+      nodeGroups.get(key)!.push(node);
+    }
+
+    // Find groups with multiple similar operations
+    for (const [key, nodes] of nodeGroups) {
+      if (nodes.length > 2) {
+        const [type, content] = key.split('-', 2);
+        anomalies.push({
+          id: `redundant-${key}`,
+          type: 'redundant_calls',
+          severity: nodes.length > 4 ? 'high' : 'medium',
+          title: `Redundant Operations`,
+          description: `${nodes.length} similar ${type} operations detected with similar content`,
+          affectedNodes: nodes.map(n => n.id),
+          cost: nodes.reduce((sum, n) => sum + (n.cost || 0), 0),
+          suggestions: [
+            'Implement operation deduplication',
+            'Add result caching for similar operations',
+            'Review the logic that triggers these operations',
+            'Consider batching similar requests'
+          ],
+          confidence: 0.7
+        });
+      }
+    }
+
+    return anomalies;
+  }
+
+  private detectErrorPatterns(): Anomaly[] {
+    const anomalies: Anomaly[] = [];
+    
+    // Look for error patterns in responses
+    const errorKeywords = ['error', 'failed', 'exception', 'timeout', 'invalid', 'unauthorized'];
+    const errorNodes = this.nodes.filter(node => {
+      const content = (node.response || node.toolOutput || '').toLowerCase();
+      return errorKeywords.some(keyword => content.includes(keyword));
     });
 
-    // Check for near-identical parameters (fuzzy matching)
-    if (calls.length > loopThreshold) {
-      const groups = fuzzyGroupByParams(calls, similarityThreshold);
-      groups.forEach((group, signature) => {
-        if (group.length > loopThreshold) {
-          const totalCost = group.reduce((sum, n) => sum + n.data.cost, 0);
-
-          anomalies.push({
-            id: `fuzzy_loop_${toolName}_${Date.now()}`,
-            nodeId: group[0].id,
-            type: "loop",
-            severity: "medium",
-            message: `${toolName} called ${group.length} times with nearly identical parameters`,
-            suggestion: `Parameters vary slightly but may indicate a loop. Consider normalizing inputs or adding fuzzy caching.`,
-            cost: totalCost,
-            metadata: {
-              callCount: group.length,
-              signature,
-              nodeIds: group.map((n) => n.id)
-            }
-          });
-        }
-      });
-    }
-  });
-
-  return anomalies;
-};
-
-// ============================================================================
-// COST SPIKE DETECTION
-// ============================================================================
-
-export const detectCostSpikes = (
-  nodes: Node<TraceNodeData>[],
-  historicalAvg?: number,
-  config: DetectionConfig = {}
-): Anomaly[] => {
-  const { costSpikeMultiplier = 3 } = config;
-  const anomalies: Anomaly[] = [];
-
-  // Calculate average cost
-  const costs = nodes.map((n) => n.data.cost);
-  const avgCost = costs.reduce((sum, c) => sum + c, 0) / costs.length;
-  const baseAvg = historicalAvg || avgCost;
-
-  // Find spikes
-  nodes.forEach((node) => {
-    if (node.data.cost > baseAvg * costSpikeMultiplier) {
-      const multiple = (node.data.cost / baseAvg).toFixed(1);
-
-      let suggestion = `Cost is ${multiple}x higher than average. `;
-      if (node.data.type === "llm") {
-        suggestion += `Consider: 1) Reducing output tokens via max_tokens parameter, 2) Shortening system prompt, 3) Using a cheaper model, 4) Caching similar requests.`;
-      } else if (node.data.type === "tool") {
-        suggestion += `Consider: 1) Limiting result set size, 2) Adding pagination, 3) Caching frequently accessed data, 4) Using cheaper API tier.`;
-      }
-
+    if (errorNodes.length > 0) {
       anomalies.push({
-        id: `cost_spike_${node.id}`,
-        nodeId: node.id,
-        type: "cost-spike",
-        severity: node.data.cost > baseAvg * 5 ? "high" : "medium",
-        message: `${
-          node.data.label
-        }: Cost ${multiple}x higher than average ($${baseAvg.toFixed(4)})`,
-        suggestion,
-        cost: node.data.cost - baseAvg,
-        metadata: {
-          actualCost: node.data.cost,
-          avgCost: baseAvg,
-          multiple: parseFloat(multiple)
-        }
+        id: 'error-pattern',
+        type: 'error_pattern',
+        severity: errorNodes.length > 2 ? 'high' : 'medium',
+        title: `Error Pattern Detected`,
+        description: `${errorNodes.length} operations resulted in errors or failures`,
+        affectedNodes: errorNodes.map(n => n.id),
+        suggestions: [
+          'Review error handling mechanisms',
+          'Add retry logic with exponential backoff',
+          'Implement proper validation before operations',
+          'Add monitoring and alerting for error rates'
+        ],
+        confidence: 0.8
       });
     }
-  });
 
-  return anomalies;
-};
+    return anomalies;
+  }
 
-// ============================================================================
-// TOKEN SPIKE DETECTION
-// ============================================================================
+  private detectPerformanceIssues(): Anomaly[] {
+    const anomalies: Anomaly[] = [];
+    
+    if (this.nodes.length === 0) return anomalies;
 
-export const detectTokenSpikes = (
-  nodes: Node<TraceNodeData>[],
-  config: DetectionConfig = {}
-): Anomaly[] => {
-  const { tokenSpikeMultiplier = 3 } = config;
-  const anomalies: Anomaly[] = [];
+    const totalLatency = this.nodes.reduce((sum, node) => sum + (node.latency || 0), 0);
+    const avgLatency = totalLatency / this.nodes.length;
+    const slowThreshold = avgLatency * 2; // 2x average latency
 
-  const nodesWithTokens = nodes.filter((n) => n.data.tokens);
-  if (nodesWithTokens.length === 0) return anomalies;
-
-  // Calculate average tokens
-  const avgTokens =
-    nodesWithTokens.reduce(
-      (sum, n) => sum + (n.data.tokens!.input + n.data.tokens!.output),
-      0
-    ) / nodesWithTokens.length;
-
-  nodesWithTokens.forEach((node) => {
-    const totalTokens = node.data.tokens!.input + node.data.tokens!.output;
-
-    if (totalTokens > avgTokens * tokenSpikeMultiplier) {
-      const multiple = (totalTokens / avgTokens).toFixed(1);
-
+    // Find slow operations
+    const slowNodes = this.nodes.filter(node => (node.latency || 0) > slowThreshold);
+    
+    for (const node of slowNodes) {
       anomalies.push({
-        id: `token_spike_${node.id}`,
-        nodeId: node.id,
-        type: "token-spike",
-        severity: totalTokens > avgTokens * 5 ? "high" : "medium",
-        message: `${node.data.label}: Token usage ${multiple}x higher than average`,
-        suggestion: `High token count detected. Consider: 1) Reducing max_tokens, 2) Summarizing context, 3) Using prompt compression, 4) Splitting into smaller operations.`,
-        metadata: {
-          tokens: totalTokens,
-          avgTokens: Math.round(avgTokens),
-          multiple: parseFloat(multiple),
-          inputTokens: node.data.tokens!.input,
-          outputTokens: node.data.tokens!.output
-        }
+        id: `slow-${node.id}`,
+        type: 'performance_issue',
+        severity: (node.latency || 0) > avgLatency * 3 ? 'high' : 'medium',
+        title: `Slow Operation`,
+        description: `Operation "${node.label || node.type}" took ${node.latency || 0}ms, which is ${((node.latency || 0) / avgLatency).toFixed(1)}x the average latency`,
+        affectedNodes: [node.id],
+        latency: node.latency,
+        suggestions: [
+          'Optimize the operation for better performance',
+          'Consider using faster models or APIs',
+          'Implement parallel processing where possible',
+          'Add timeout mechanisms to prevent hanging'
+        ],
+        confidence: 0.7
       });
     }
-  });
 
-  return anomalies;
-};
+    return anomalies;
+  }
 
-// ============================================================================
-// SLOW OPERATION DETECTION
-// ============================================================================
+  private normalizeContent(content: string): string {
+    // Normalize content for comparison (remove extra spaces, convert to lowercase)
+    return content.toLowerCase().replace(/\s+/g, ' ').trim().substring(0, 50);
+  }
 
-export const detectSlowOperations = (
-  nodes: Node<TraceNodeData>[],
-  config: DetectionConfig = {}
-): Anomaly[] => {
-  const { latencySpikeMultiplier = 3 } = config;
-  const anomalies: Anomaly[] = [];
+  private calculateSummary(anomalies: Anomaly[]): AnomalyDetectionResult['summary'] {
+    const byType: Record<string, number> = {};
+    const bySeverity: Record<string, number> = {};
+    let totalCostImpact = 0;
+    let totalLatencyImpact = 0;
 
-  const avgLatency =
-    nodes.reduce((sum, n) => sum + n.data.latency, 0) / nodes.length;
-
-  nodes.forEach((node) => {
-    if (node.data.latency > avgLatency * latencySpikeMultiplier) {
-      const multiple = (node.data.latency / avgLatency).toFixed(1);
-
-      anomalies.push({
-        id: `slow_${node.id}`,
-        nodeId: node.id,
-        type: "slow-operation",
-        severity: node.data.latency > avgLatency * 5 ? "high" : "medium",
-        message: `${
-          node.data.label
-        }: Latency ${multiple}x higher than average (${(
-          avgLatency / 1000
-        ).toFixed(2)}s)`,
-        suggestion: `Operation is unusually slow. Consider: 1) Adding timeout limits, 2) Implementing retries with shorter timeouts, 3) Caching results, 4) Using async/parallel execution.`,
-        metadata: {
-          latency: node.data.latency,
-          avgLatency,
-          multiple: parseFloat(multiple)
-        }
-      });
+    for (const anomaly of anomalies) {
+      byType[anomaly.type] = (byType[anomaly.type] || 0) + 1;
+      bySeverity[anomaly.severity] = (bySeverity[anomaly.severity] || 0) + 1;
+      totalCostImpact += anomaly.cost || 0;
+      totalLatencyImpact += anomaly.latency || 0;
     }
-  });
 
-  return anomalies;
-};
-
-// ============================================================================
-// TIMEOUT RISK PREDICTION
-// ============================================================================
-
-export const predictTimeoutRisk = (
-  nodes: Node<TraceNodeData>[],
-  maxBudget: { time?: number; cost?: number }
-): Anomaly[] => {
-  const anomalies: Anomaly[] = [];
-
-  const completedNodes = nodes.filter((n) => n.data.status === "complete");
-  const runningNodes = nodes.filter((n) => n.data.status === "running");
-  const pendingNodes = nodes.filter((n) => n.data.status === "pending");
-
-  if (runningNodes.length === 0 && pendingNodes.length === 0) return anomalies;
-
-  // Calculate current stats
-  const totalTime = completedNodes.reduce((sum, n) => sum + n.data.latency, 0);
-  const totalCost = completedNodes.reduce((sum, n) => sum + n.data.cost, 0);
-  const avgTimePerNode = totalTime / completedNodes.length;
-  const avgCostPerNode = totalCost / completedNodes.length;
-
-  // Project remaining
-  const remainingNodes = runningNodes.length + pendingNodes.length;
-  const projectedTime = totalTime + remainingNodes * avgTimePerNode;
-  const projectedCost = totalCost + remainingNodes * avgCostPerNode;
-
-  // Check time budget
-  if (maxBudget.time && projectedTime > maxBudget.time) {
-    anomalies.push({
-      id: "timeout_risk",
-      nodeId: "system",
-      type: "timeout-risk",
-      severity: "high",
-      message: `Projected to exceed time budget: ${(
-        projectedTime / 1000
-      ).toFixed(1)}s / ${(maxBudget.time / 1000).toFixed(1)}s`,
-      suggestion: `Consider: 1) Terminating early, 2) Skipping non-critical operations, 3) Implementing early stopping conditions.`,
-      metadata: {
-        currentTime: totalTime,
-        projectedTime,
-        budget: maxBudget.time,
-        remainingNodes
-      }
-    });
+    return {
+      total: anomalies.length,
+      byType,
+      bySeverity,
+      totalCostImpact,
+      totalLatencyImpact
+    };
   }
-
-  // Check cost budget
-  if (maxBudget.cost && projectedCost > maxBudget.cost) {
-    anomalies.push({
-      id: "cost_budget_risk",
-      nodeId: "system",
-      type: "timeout-risk",
-      severity: "high",
-      message: `Projected to exceed cost budget: $${projectedCost.toFixed(
-        2
-      )} / $${maxBudget.cost.toFixed(2)}`,
-      suggestion: `Consider: 1) Using cheaper models, 2) Reducing token limits, 3) Caching more aggressively, 4) Terminating early.`,
-      cost: projectedCost - maxBudget.cost,
-      metadata: {
-        currentCost: totalCost,
-        projectedCost,
-        budget: maxBudget.cost,
-        remainingNodes
-      }
-    });
-  }
-
-  return anomalies;
-};
-
-// ============================================================================
-// CONTRADICTION DETECTION
-// ============================================================================
-
-export const detectContradictions = (
-  nodes: Node<TraceNodeData>[]
-): Anomaly[] => {
-  const anomalies: Anomaly[] = [];
-  const decisions = nodes.filter(
-    (n) => n.data.type === "decision" || n.data.type === "llm"
-  );
-
-  // Simple contradiction detection based on response content
-  // In production, use semantic similarity or LLM-based analysis
-  const keywords = {
-    positive: ["yes", "accept", "approve", "recommend", "good", "best"],
-    negative: ["no", "reject", "deny", "not recommend", "bad", "worst"]
-  };
-
-  for (let i = 0; i < decisions.length - 1; i++) {
-    const node1 = decisions[i];
-    const node2 = decisions[i + 1];
-
-    const text1 = (node1.data.response || "").toLowerCase();
-    const text2 = (node2.data.response || "").toLowerCase();
-
-    const node1Positive = keywords.positive.some((k) => text1.includes(k));
-    const node1Negative = keywords.negative.some((k) => text1.includes(k));
-    const node2Positive = keywords.positive.some((k) => text2.includes(k));
-    const node2Negative = keywords.negative.some((k) => text2.includes(k));
-
-    // Check for contradictions
-    if ((node1Positive && node2Negative) || (node1Negative && node2Positive)) {
-      anomalies.push({
-        id: `contradiction_${node1.id}_${node2.id}`,
-        nodeId: node1.id,
-        type: "contradiction",
-        severity: "medium",
-        message: `Potential contradiction between "${node1.data.label}" and "${node2.data.label}"`,
-        suggestion: `Review decision logic. Decisions may be conflicting. Consider: 1) Adding consistency checks, 2) Maintaining decision history, 3) Implementing validation rules.`,
-        metadata: {
-          node1: { id: node1.id, label: node1.data.label },
-          node2: { id: node2.id, label: node2.data.label }
-        }
-      });
-    }
-  }
-
-  return anomalies;
-};
-
-// ============================================================================
-// COMPREHENSIVE ANOMALY DETECTION
-// ============================================================================
-
-export const detectAllAnomalies = (
-  nodes: Node<TraceNodeData>[],
-  options: {
-    config?: DetectionConfig;
-    historicalAvg?: number;
-    budgets?: { time?: number; cost?: number };
-  } = {}
-): Anomaly[] => {
-  const { config = {}, historicalAvg, budgets } = options;
-
-  const anomalies: Anomaly[] = [
-    ...detectLoops(nodes, config),
-    ...detectCostSpikes(nodes, historicalAvg, config),
-    ...detectTokenSpikes(nodes, config),
-    ...detectSlowOperations(nodes, config),
-    ...detectContradictions(nodes)
-  ];
-
-  if (budgets) {
-    anomalies.push(...predictTimeoutRisk(nodes, budgets));
-  }
-
-  // Sort by severity
-  const severityOrder = { high: 0, medium: 1, low: 2 };
-  anomalies.sort(
-    (a, b) => severityOrder[a.severity] - severityOrder[b.severity]
-  );
-
-  return anomalies;
-};
-
-// ============================================================================
-// HELPER FUNCTIONS
-// ============================================================================
-
-function fuzzyGroupByParams(
-  nodes: Node<TraceNodeData>[],
-  threshold: number
-): Map<string, Node<TraceNodeData>[]> {
-  const groups = new Map<string, Node<TraceNodeData>[]>();
-
-  nodes.forEach((node) => {
-    const params = node.data.toolParams || {};
-    const signature = createFuzzySignature(params);
-
-    if (!groups.has(signature)) groups.set(signature, []);
-    groups.get(signature)!.push(node);
-  });
-
-  return groups;
 }
-
-function createFuzzySignature(params: Record<string, any>): string {
-  // Create a signature that ignores minor variations
-  const normalized: Record<string, any> = {};
-
-  Object.entries(params).forEach(([key, value]) => {
-    if (typeof value === "string") {
-      // Normalize strings
-      normalized[key] = value.toLowerCase().trim();
-    } else if (typeof value === "number") {
-      // Round numbers to reduce sensitivity
-      normalized[key] = Math.round(value * 100) / 100;
-    } else {
-      normalized[key] = value;
-    }
-  });
-
-  return JSON.stringify(normalized);
-}
-
-// Calculate similarity between two parameter sets
-export function calculateParameterSimilarity(
-  params1: Record<string, any>,
-  params2: Record<string, any>
-): number {
-  const keys = new Set([...Object.keys(params1), ...Object.keys(params2)]);
-  let matches = 0;
-
-  keys.forEach((key) => {
-    if (params1[key] === params2[key]) {
-      matches++;
-    } else if (
-      typeof params1[key] === "string" &&
-      typeof params2[key] === "string"
-    ) {
-      // Use Levenshtein distance for strings
-      const similarity = stringSimilarity(params1[key], params2[key]);
-      if (similarity > 0.8) matches += similarity;
-    }
-  });
-
-  return matches / keys.size;
-}
-
-function stringSimilarity(str1: string, str2: string): number {
-  const longer = str1.length > str2.length ? str1 : str2;
-  const shorter = str1.length > str2.length ? str2 : str1;
-
-  if (longer.length === 0) return 1.0;
-
-  const editDistance = levenshteinDistance(longer, shorter);
-  return (longer.length - editDistance) / longer.length;
-}
-
-function levenshteinDistance(str1: string, str2: string): number {
-  const matrix: number[][] = [];
-
-  for (let i = 0; i <= str2.length; i++) {
-    matrix[i] = [i];
-  }
-
-  for (let j = 0; j <= str1.length; j++) {
-    matrix[0][j] = j;
-  }
-
-  for (let i = 1; i <= str2.length; i++) {
-    for (let j = 1; j <= str1.length; j++) {
-      if (str2.charAt(i - 1) === str1.charAt(j - 1)) {
-        matrix[i][j] = matrix[i - 1][j - 1];
-      } else {
-        matrix[i][j] = Math.min(
-          matrix[i - 1][j - 1] + 1,
-          matrix[i][j - 1] + 1,
-          matrix[i - 1][j] + 1
-        );
-      }
-    }
-  }
-
-  return matrix[str2.length][str1.length];
-}
-
-export default {
-  detectLoops,
-  detectCostSpikes,
-  detectTokenSpikes,
-  detectSlowOperations,
-  predictTimeoutRisk,
-  detectContradictions,
-  detectAllAnomalies,
-  calculateParameterSimilarity
-};
