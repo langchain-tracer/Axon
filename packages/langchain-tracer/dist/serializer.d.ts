@@ -34,6 +34,10 @@ export declare class EventSerializer {
         total: number;
     }): number;
     /**
+     * Calculate cost for tool operations
+     */
+    static calculateToolCost(toolName: string, latency: number): number;
+    /**
      * Extract model name from serialized data
      */
     static extractModelName(serialized: Serialized): string;

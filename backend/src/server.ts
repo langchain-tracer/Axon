@@ -12,11 +12,19 @@ import cors from "cors";
 import dotenv from "dotenv";
 import {
   TraceModel,
-  NodeModel
+  NodeModel,
+  EdgeModel
 } from "./database/models.js";
 import { db } from "./database/connection.js";
+import { initializeSchema } from "./database/schema.js";
 import { TraceEvent } from "./types/index.js";
-import { storage } from "./storage-sqlite.js";
+import { TraceProcessor } from "./services/trace-processor.js";
+
+// Initialize database schema on startup
+initializeSchema();
+
+// Initialize trace processor
+const traceProcessor = new TraceProcessor();
 
 // Simple anomaly detection for backend
 interface SimpleAnomaly {
@@ -313,11 +321,11 @@ app.get("/api/traces", (req, res) => {
       return res.json({ traces: [], total: 0 });
     }
 
-    // Enhance traces with cost and node count
+    // Enhance traces with cost and node count from nodes table
     const enhancedTraces = traces.map((trace: any) => {
-      const events = db.query("SELECT cost, type FROM events WHERE trace_id = ?", [trace.trace_id]);
-      const totalCost = events.reduce((sum: number, event: any) => sum + (event.cost || 0), 0);
-      const nodeCount = events.length;
+      const nodes = db.query("SELECT cost, type FROM nodes WHERE trace_id = ?", [trace.id]);
+      const totalCost = nodes.reduce((sum: number, node: any) => sum + (node.cost || 0), 0);
+      const nodeCount = nodes.length;
       
       return {
         ...trace,
@@ -351,52 +359,74 @@ app.get("/api/traces/:traceId", (req, res) => {
       return res.status(404).json({ error: "Trace not found" });
     }
 
-    // Get events and transform them into nodes and edges
-    const events = db.query<any>(
-      "SELECT * FROM events WHERE trace_id = ? ORDER BY timestamp ASC",
-      [traceId]
-    );
-    
-    // Transform events into nodes
-    const nodes = events.map((event, index) => ({
-      id: event.event_id,
-      runId: event.run_id,
-      parentRunId: event.parent_run_id,
-      type: event.type,
-      status: 'complete',
-      startTime: event.timestamp,
-      endTime: event.timestamp + (event.latency || 0),
-      cost: event.cost || 0,
-      latency: event.latency || 0,
-      tokens: event.tokens_total ? {
-        input: event.tokens_prompt || 0,
-        output: event.tokens_completion || 0,
-        total: event.tokens_total
-      } : undefined,
-      prompt: event.prompts,
-      response: event.response,
-      toolName: event.tool_name,
-      toolInput: event.tool_input,
-      toolOutput: event.tool_output,
-      error: event.error,
-      metadata: event.metadata ? JSON.parse(event.metadata) : {},
-      createdAt: new Date(event.created_at)
-    }));
+    // Get nodes from the nodes table
+    const nodes = NodeModel.findByTraceId(traceId).map((node) => {
+      const data = typeof node.data === 'string' ? JSON.parse(node.data) : node.data;
+      return {
+        id: node.id,
+        runId: node.runId,
+        parentRunId: node.parentRunId,
+        type: node.type,
+        status: node.status,
+        startTime: node.startTime,
+        endTime: node.endTime,
+        model: node.model || data.model || 'unknown',
+        cost: node.cost || 0,
+        latency: node.latency || 0,
+        tokens: typeof node.tokens === 'string' ? JSON.parse(node.tokens) : node.tokens,
+        prompts: data.prompts || [],
+        response: data.response || '',
+        reasoning: data.reasoning || '',
+        toolName: data.toolName || '',
+        toolInput: data.toolInput || '',
+        toolOutput: data.toolOutput || '',
+        chainName: data.chainName || '',
+        chainInputs: data.inputs || '',
+        chainOutputs: data.outputs || '',
+        agentActions: data.agentActions || [],
+        error: node.error,
+        metadata: data.metadata || {},
+        createdAt: new Date(node.createdAt)
+      };
+    });
     
     // Create edges based on parent-child relationships
-    const edges = events
-      .filter(event => event.parent_run_id)
-      .map(event => {
-        // Find the parent event by run_id
-        const parentEvent = events.find(e => e.run_id === event.parent_run_id);
+    // Map run_id to node id for React Flow
+    const runIdToNodeId = new Map(nodes.map(n => [n.runId, n.id]));
+    console.log(`[DEBUG] nodes array length: ${nodes.length}`);
+    console.log(`[DEBUG] First 3 nodes:`, nodes.slice(0, 3).map(n => ({ id: n.id, runId: n.runId, type: n.type })));
+    console.log(`[DEBUG] runIdToNodeId map size: ${runIdToNodeId.size}`);
+    console.log(`[DEBUG] First 3 map entries:`, Array.from(runIdToNodeId.entries()).slice(0, 3));
+    
+    const edgesFromDB = EdgeModel.findByTraceId(traceId);
+    console.log(`[DEBUG] edges from DB: ${edgesFromDB.length}`);
+    if (edgesFromDB.length > 0) {
+      console.log(`[DEBUG] First edge:`, edgesFromDB[0]);
+      console.log(`[DEBUG] Lookup from_node in map:`, runIdToNodeId.get(edgesFromDB[0].fromNode));
+      console.log(`[DEBUG] Lookup to_node in map:`, runIdToNodeId.get(edgesFromDB[0].toNode));
+    }
+    
+    const edges = edgesFromDB
+      .map(edge => {
+        const sourceNodeId = runIdToNodeId.get(edge.fromNode);
+        const targetNodeId = runIdToNodeId.get(edge.toNode);
+        
+        if (!sourceNodeId || !targetNodeId) {
+          console.log(`[DEBUG] Mapping failed for edge ${edge.id}: from=${edge.fromNode} (found: ${sourceNodeId}) to=${edge.toNode} (found: ${targetNodeId})`);
+          return null;
+        }
+        
         return {
-          id: `edge-${parentEvent?.event_id || event.parent_run_id}-${event.event_id}`,
-          source: parentEvent?.event_id || event.parent_run_id,
-          target: event.event_id,
+          id: edge.id,
+          source: sourceNodeId,
+          target: targetNodeId,
           type: 'smoothstep',
           animated: false
         };
-      });
+      })
+      .filter(edge => edge !== null);
+    
+    console.log(`[DEBUG] Successfully mapped ${edges.length} out of ${edgesFromDB.length} edges`);
     
     // Run anomaly detection
     const anomalies = detectSimpleAnomalies(nodes, edges);
@@ -437,13 +467,17 @@ app.get("/api/traces/:traceId", (req, res) => {
         y: position.y,
 
         // Type-specific data
-        prompt: node.prompt,
+        prompts: node.prompts,
         response: node.response,
-        model: node.metadata?.model || 'unknown',
+        reasoning: node.reasoning,
+        model: node.model || 'unknown',
         toolName: node.toolName,
         toolInput: node.toolInput,
         toolOutput: node.toolOutput,
-        chainName: node.metadata?.chainName || 'unknown',
+        chainName: node.chainName || node.metadata?.chainName || 'unknown',
+        chainInputs: node.chainInputs,
+        chainOutputs: node.chainOutputs,
+        agentActions: node.agentActions,
 
         // Relationships
         parentRunId: node.parentRunId,
@@ -651,11 +685,10 @@ io.on("connection", (socket) => {
 
       console.log(`📥 Received ${events.length} events from ${socket.id}`);
 
-      // Process each event (assuming you have a processor)
-      storage.addEvents(events);
-
-      // Broadcast to dashboard clients (for real-time updates)
+      // Process each event using the new trace processor
       for (const event of events) {
+        traceProcessor.processEvent(event);
+        // Broadcast to dashboard clients (for real-time updates)
         io.to(`trace:${event.traceId}`).emit("new_event", event);
       }
 
@@ -703,7 +736,7 @@ io.on("connection", (socket) => {
 
       // Process the converted events
       for (const event of traceEvents) {
-        storage.addEvents([event]);
+        traceProcessor.processEvent(event);
 
         // Broadcast to dashboard clients
         io.to(`trace:${event.traceId}`).emit("trace_update", {
@@ -735,10 +768,11 @@ io.on("connection", (socket) => {
     try {
       const trace = TraceModel.findById(traceId);
       if (trace) {
-        // Get events from the events table and transform them to nodes/edges
-        const events = db.query("SELECT * FROM events WHERE trace_id = ? ORDER BY timestamp ASC", [traceId]);
+        // Get nodes from the nodes table
+        const nodes = NodeModel.findByTraceId(traceId);
+        const edges = EdgeModel.findByTraceId(traceId);
         
-        if (events.length === 0) {
+        if (nodes.length === 0) {
           socket.emit("trace_data", {
             trace,
             nodes: [],
@@ -758,30 +792,35 @@ io.on("connection", (socket) => {
           return;
         }
 
-        // Transform events to nodes (same logic as the API endpoint)
-        const sortedNodes = events.map((event: any) => ({
-          id: event.event_id,
-          type: event.type,
-          status: "complete", // Events are always complete when stored
-          startTime: event.timestamp,
-          endTime: event.timestamp, // Events don't have separate end times
-          latency: event.latency || 0,
-          runId: event.run_id,
-          parentRunId: event.parent_run_id,
-          prompt: event.prompts ? JSON.parse(event.prompts) : undefined,
-          response: event.response,
-          toolName: event.tool_name,
-          toolInput: event.tool_input ? JSON.parse(event.tool_input) : undefined,
-          toolOutput: event.tool_output,
-          metadata: event.metadata ? JSON.parse(event.metadata) : {},
-          tokens: event.tokens_prompt ? {
-            input: event.tokens_prompt,
-            output: event.tokens_completion,
-            total: event.tokens_total
-          } : undefined,
-          cost: event.cost || 0,
-          error: event.error
-        }));
+        // Transform nodes for frontend (same logic as API endpoint)
+        const sortedNodes = nodes.map((node: any) => {
+          const data = typeof node.data === 'string' ? JSON.parse(node.data) : node.data;
+          return {
+            id: node.id,
+            type: node.type,
+            status: node.status,
+            startTime: node.startTime,
+            endTime: node.endTime,
+            model: node.model || data.model || 'unknown',
+            latency: node.latency || 0,
+            runId: node.runId,
+            parentRunId: node.parentRunId,
+            prompts: data.prompts || [],
+            response: data.response || '',
+            reasoning: data.reasoning || '',
+            toolName: data.toolName || '',
+            toolInput: data.toolInput || '',
+            toolOutput: data.toolOutput || '',
+            chainName: data.chainName || '',
+            chainInputs: data.inputs || '',
+            chainOutputs: data.outputs || '',
+            agentActions: data.agentActions || [],
+            metadata: data.metadata || {},
+            tokens: typeof node.tokens === 'string' ? JSON.parse(node.tokens) : node.tokens,
+            cost: node.cost || 0,
+            error: node.error
+          };
+        });
 
         // Calculate positions for nodes
         const calculateNodePosition = (index: number) => ({
@@ -859,32 +898,43 @@ io.on("connection", (socket) => {
             endTime: node.endTime,
             x: position.x,
             y: position.y,
-            prompt: node.prompt,
+            prompts: node.prompts,
             response: node.response,
-            model: node.metadata?.model || 'unknown',
+            reasoning: node.reasoning,
+            model: node.model || 'unknown',
             toolName: node.toolName,
             toolInput: node.toolInput,
             toolOutput: node.toolOutput,
-            chainName: node.metadata?.chainName || 'unknown',
+            chainName: node.chainName || node.metadata?.chainName || 'unknown',
+            chainInputs: node.chainInputs,
+            chainOutputs: node.chainOutputs,
+            agentActions: node.agentActions,
             parentRunId: node.parentRunId,
             error: node.error,
             hasLoop: false
           };
         });
 
-        // Create edges
-        const edges = events
-          .filter(event => event.parent_run_id)
-          .map(event => {
-            const parentEvent = events.find(e => e.run_id === event.parent_run_id);
+        // Create edges - map run_id to node id for React Flow
+        const runIdToNodeId = new Map(sortedNodes.map((n: any) => [n.runId, n.id]));
+        const edgesData = EdgeModel.findByTraceId(traceId)
+          .map((edge: any) => {
+            const sourceNodeId = runIdToNodeId.get(edge.fromNode);
+            const targetNodeId = runIdToNodeId.get(edge.toNode);
+            
+            if (!sourceNodeId || !targetNodeId) {
+              return null;
+            }
+            
             return {
-              id: `edge-${parentEvent?.event_id || event.parent_run_id}-${event.event_id}`,
-              source: parentEvent?.event_id || event.parent_run_id,
-              target: event.event_id,
+              id: edge.id,
+              source: sourceNodeId,
+              target: targetNodeId,
               type: 'smoothstep',
               animated: false
             };
-          });
+          })
+          .filter((edge: any) => edge !== null);
 
         // Calculate stats
         const totalCost = enhancedNodes.reduce((sum, node) => sum + (node.cost || 0), 0);
@@ -897,7 +947,7 @@ io.on("connection", (socket) => {
         socket.emit("trace_data", {
           trace,
           nodes: enhancedNodes,
-          edges,
+          edges: edgesData,
           anomalies: [],
           stats: {
             totalNodes: enhancedNodes.length,

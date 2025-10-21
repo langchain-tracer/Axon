@@ -66,14 +66,14 @@ export class TraceModel {
 
     values.push(traceId);
 
-    db.run(`UPDATE traces SET ${fields.join(", ")} WHERE trace_id = ?`, values);
+    db.run(`UPDATE traces SET ${fields.join(", ")} WHERE id = ?`, values);
   }
 
   /**
    * Get trace by ID
    */
   static findById(traceId: string): Trace | null {
-    const row = db.get<any>("SELECT * FROM traces WHERE trace_id = ?", [traceId]);
+    const row = db.get<any>("SELECT * FROM traces WHERE id = ?", [traceId]);
 
     if (!row) return null;
 
@@ -127,11 +127,12 @@ export class NodeModel {
    * Create a node
    */
   static create(node: Node): Node {
+    console.log(`[NodeModel.create] Inserting node - type: ${node.type}, model: "${node.model}", runId: ${node.runId}`);
     db.run(
       `INSERT INTO nodes (
         id, trace_id, run_id, parent_run_id, type, status,
-        start_time, end_time, data, cost, tokens, latency, error
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        start_time, end_time, data, model, cost, tokens, latency, error
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         node.id,
         node.traceId,
@@ -142,6 +143,7 @@ export class NodeModel {
         node.startTime,
         node.endTime || null,
         JSON.stringify(node.data),
+        node.model || null,
         node.cost || null,
         node.tokens ? JSON.stringify(node.tokens) : null,
         node.latency || null,
@@ -167,6 +169,10 @@ export class NodeModel {
       fields.push("end_time = ?");
       values.push(data.endTime);
     }
+    if (data.model !== undefined) {
+      fields.push("model = ?");
+      values.push(data.model);
+    }
     if (data.cost !== undefined) {
       fields.push("cost = ?");
       values.push(data.cost);
@@ -182,6 +188,10 @@ export class NodeModel {
     if (data.error) {
       fields.push("error = ?");
       values.push(data.error);
+    }
+    if (data.data) {
+      fields.push("data = ?");
+      values.push(JSON.stringify(data.data));
     }
 
     if (fields.length === 0) return;
@@ -201,9 +211,20 @@ export class NodeModel {
     );
 
     return rows.map((row) => ({
-      ...row,
+      id: row.id,
+      traceId: row.trace_id,
+      runId: row.run_id,
+      parentRunId: row.parent_run_id,
+      type: row.type,
+      status: row.status,
+      startTime: row.start_time,
+      endTime: row.end_time,
       data: JSON.parse(row.data),
+      model: row.model,
+      cost: row.cost,
       tokens: row.tokens ? JSON.parse(row.tokens) : undefined,
+      latency: row.latency,
+      error: row.error,
       createdAt: new Date(row.created_at)
     }));
   }
@@ -222,6 +243,13 @@ export class NodeModel {
       tokens: row.tokens ? JSON.parse(row.tokens) : undefined,
       createdAt: new Date(row.created_at)
     };
+  }
+
+  /**
+   * Alias for findByRunId (for compatibility)
+   */
+  static getByRunId(runId: string): Node | null {
+    return this.findByRunId(runId);
   }
 }
 
@@ -258,7 +286,11 @@ export class EdgeModel {
     ]);
 
     return rows.map((row) => ({
-      ...row,
+      id: row.id,
+      traceId: row.trace_id,
+      fromNode: row.from_node,
+      toNode: row.to_node,
+      edgeType: row.edge_type || 'default',
       createdAt: new Date(row.created_at)
     }));
   }
