@@ -43,6 +43,9 @@ export const useTraceData = (
       }
 
       const data = await response.json();
+      console.log(data, 'data/n/n/n/n');
+      console.log(data.nodes, 'data.nodes/n/n/n/n');
+      console.log(data.edges, 'data.edges/n/n/n/n');
 
       // Convert backend format to ReactFlow format
       const flowNodes: Node[] = data.nodes.map((node: any) => ({

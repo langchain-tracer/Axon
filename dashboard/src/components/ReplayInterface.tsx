@@ -309,15 +309,29 @@ const ReplayInterface: React.FC<ReplayInterfaceProps> = ({
                 </label>
                 <div className="space-y-2">
                   <div className="text-xs text-slate-400">Original:</div>
-                  <div className="text-xs text-slate-300 bg-slate-700/50 p-2 rounded border-l-2 border-slate-500">
-                    {selectedNode.prompt || 'No prompt available'}
+                  <div className="text-xs text-slate-300 bg-slate-700/50 p-2 rounded border-l-2 border-slate-500 max-h-40 overflow-y-auto">
+                    {selectedNode.prompts && selectedNode.prompts.length > 0 
+                      ? selectedNode.prompts.map((p: string, i: number) => (
+                          <div key={i} className={i > 0 ? 'mt-2 pt-2 border-t border-slate-600' : ''}>
+                            {p}
+                          </div>
+                        ))
+                      : selectedNode.response 
+                        ? `Response: ${selectedNode.response}`
+                        : selectedNode.toolInput
+                          ? `Tool Input: ${typeof selectedNode.toolInput === 'string' ? selectedNode.toolInput : JSON.stringify(selectedNode.toolInput, null, 2)}`
+                          : 'No prompt available'}
                   </div>
                   <div className="text-xs text-slate-400">Modified:</div>
                   <textarea
-                    value={modifications.promptChanges?.get(selectedNode.id) || selectedNode.prompt || ''}
+                    value={modifications.promptChanges?.get(selectedNode.id) || 
+                           (selectedNode.prompts && selectedNode.prompts.length > 0 ? selectedNode.prompts.join('\n\n') : '') || 
+                           selectedNode.response || 
+                           (typeof selectedNode.toolInput === 'string' ? selectedNode.toolInput : JSON.stringify(selectedNode.toolInput, null, 2)) || 
+                           ''}
                     onChange={(e) => handleModificationChange('promptChanges', selectedNode.id, e.target.value)}
                     className="w-full bg-slate-600 border border-slate-500 rounded-md px-3 py-2 text-sm text-white placeholder-slate-400 focus:ring-blue-500 focus:border-blue-500"
-                    rows={3}
+                    rows={6}
                     placeholder="Enter modified prompt..."
                   />
                 </div>
@@ -331,15 +345,26 @@ const ReplayInterface: React.FC<ReplayInterfaceProps> = ({
                   </label>
                   <div className="space-y-2">
                     <div className="text-xs text-slate-400">Original Response:</div>
-                    <div className="text-xs text-slate-300 bg-slate-700/50 p-2 rounded border-l-2 border-slate-500">
-                      {selectedNode.response || 'No response available'}
+                    <div className="text-xs text-slate-300 bg-slate-700/50 p-2 rounded border-l-2 border-green-500 max-h-40 overflow-y-auto whitespace-pre-wrap">
+                      {selectedNode.toolOutput 
+                        ? (typeof selectedNode.toolOutput === 'string' 
+                            ? selectedNode.toolOutput 
+                            : JSON.stringify(selectedNode.toolOutput, null, 2))
+                        : selectedNode.response 
+                          ? selectedNode.response
+                          : 'No response available'}
                     </div>
                     <div className="text-xs text-slate-400">Mock Response:</div>
                     <textarea
-                      value={modifications.toolResponseOverrides?.get(selectedNode.id) || selectedNode.response || ''}
+                      value={modifications.toolResponseOverrides?.get(selectedNode.id) || 
+                             (selectedNode.toolOutput 
+                               ? (typeof selectedNode.toolOutput === 'string' 
+                                   ? selectedNode.toolOutput 
+                                   : JSON.stringify(selectedNode.toolOutput, null, 2))
+                               : selectedNode.response || '')}
                       onChange={(e) => handleModificationChange('toolResponseOverrides', selectedNode.id, e.target.value)}
-                      className="w-full bg-slate-600 border border-slate-500 rounded-md px-3 py-2 text-sm text-white placeholder-slate-400 focus:ring-blue-500 focus:border-blue-500"
-                      rows={3}
+                      className="w-full bg-slate-600 border border-slate-500 rounded-md px-3 py-2 text-sm text-white placeholder-slate-400 focus:ring-blue-500 focus:border-blue-500 font-mono"
+                      rows={6}
                       placeholder="Enter mock tool response..."
                     />
                   </div>
