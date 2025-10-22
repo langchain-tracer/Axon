@@ -19,6 +19,13 @@ export interface TraceNodeData {
   timestamp: number;
   hasAnomaly?: boolean;
   anomalyType?: "loop" | "cost-spike" | "contradiction" | "timeout-risk";
+  // Additional properties for replay functionality
+  toolName?: string;
+  toolInput?: string;
+  toolOutput?: string;
+  model?: string;
+  chainName?: string;
+  metadata?: Record<string, any>;
 }
 
 export interface TraceNode {

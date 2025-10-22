@@ -4,6 +4,7 @@ import { TraceConfig } from './types';
 export { TracingCallbackHandler } from './callback';
 export { TraceClient } from './client';
 export { EventSerializer } from './serializer';
+export { createAutoTracer, detectProjectConfig, detectProjectName, isAgentTraceConfigured, getConfigurationStatus } from './auto-detection';
 export type { TraceConfig, TraceEvent, LLMStartEvent, LLMEndEvent, ToolStartEvent, ToolEndEvent, ChainStartEvent, ChainEndEvent, ErrorEvent, NodeType, NodeStatus, RunData } from './types';
 /**
  * Convenience function to create a tracer

@@ -16,7 +16,8 @@
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "reactflow": "^11.11.4",
-    "recharts": "^2.10.0"
+    "recharts": "^2.10.0",
+    "socket.io-client": "^4.8.1"
   },
   "devDependencies": {
     "@types/d3": "^7.4.3",

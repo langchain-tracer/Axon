@@ -1,0 +1,54 @@
+# Dependencies
+node_modules/
+
+# Environment variables
+.env
+.env.local
+.env.production
+
+# Build outputs
+dist/
+build/
+
+# Logs
+*.log
+logs/
+backend/backend.log
+backend/logs/
+
+# Database files
+*.db-shm
+*.db-wal
+backend/data/*.db
+!backend/data/.gitkeep
+
+# Temporary files
+*.tmp
+*.temp
+*_backup_*
+
+# Debug scripts
+*-test.cjs
+check-*.cjs
+inspect-*.cjs
+test-*.cjs
+reset-*.cjs
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Temporary documentation
+TEMP_*.md
+DEBUG_*.md
+*_FIX.md
+
+# Test outputs
+coverage/
+.nyc_output/

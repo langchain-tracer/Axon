@@ -1,0 +1,48 @@
+{
+  "name": "@agent-trace/openai-tracer",
+  "version": "1.0.0",
+  "description": "OpenAI Function Calling tracer for Agent Trace Visualizer",
+  "main": "dist/index.js",
+  "module": "dist/index.mjs",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsup src/index.ts --format cjs,esm --dts --clean",
+    "dev": "tsup src/index.ts --format cjs,esm --dts --watch",
+    "test": "jest",
+    "lint": "eslint src/**/*.ts",
+    "type-check": "tsc --noEmit"
+  },
+  "keywords": [
+    "openai",
+    "function-calling",
+    "tracing",
+    "agents",
+    "ai",
+    "monitoring"
+  ],
+  "author": "Agent Trace Team",
+  "license": "MIT",
+  "dependencies": {
+    "uuid": "^9.0.1",
+    "socket.io-client": "^4.7.4"
+  },
+  "devDependencies": {
+    "@types/uuid": "^9.0.7",
+    "tsup": "^8.0.1",
+    "typescript": "^5.3.3"
+  },
+  "peerDependencies": {
+    "openai": "^4.0.0"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ]
+}
