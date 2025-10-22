@@ -1,0 +1,27 @@
+{
+  "name": "test-langchain-project",
+  "version": "1.0.0",
+  "description": "Test project for Agent Trace Visualizer",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "test:simple": "tsx simple-test.ts",
+    "test:comprehensive": "tsx comprehensive-test.ts",
+    "test:mock": "node mock-test.js",
+    "agent-trace:start": "agent-trace start",
+    "agent-trace:status": "agent-trace status",
+    "agent-trace:stop": "agent-trace stop"
+  },
+  "dependencies": {
+    "@langchain/openai": "^0.0.14",
+    "@langchain/core": "^0.1.0",
+    "langchain": "^0.1.0",
+    "@codesmith/langchain-tracer": "file:../packages/langchain-tracer",
+    "dotenv": "^16.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "tsx": "^4.7.0",
+    "typescript": "^5.3.3"
+  }
+}
