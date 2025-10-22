@@ -34,3 +34,7 @@
 {"error":{"code":"SQLITE_ERROR"},"level":"error","message":"SQLite get error:","params":[null],"sql":"SELECT * FROM traces WHERE id = ?","timestamp":"2025-10-17T15:08:26.338Z"}
 {"error":{"code":"SQLITE_ERROR"},"level":"error","message":"SQLite get error:","params":["undefined"],"sql":"SELECT * FROM traces WHERE id = ?","timestamp":"2025-10-17T15:08:26.340Z"}
 {"error":{"code":"SQLITE_ERROR"},"level":"error","message":"SQLite get error:","params":["undefined"],"sql":"SELECT * FROM traces WHERE id = ?","timestamp":"2025-10-17T15:08:26.353Z"}
+{"level":"info","message":"Connecting to SQLite database:","timestamp":"2025-10-21T15:14:50.833Z"}
+{"level":"info","message":"SQLite database connected","timestamp":"2025-10-21T15:14:51.116Z"}
+{"level":"info","message":"Connecting to SQLite database:","timestamp":"2025-10-21T19:26:14.695Z"}
+{"level":"info","message":"SQLite database connected","timestamp":"2025-10-21T19:26:14.704Z"}
