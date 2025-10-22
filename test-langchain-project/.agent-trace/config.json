@@ -1,0 +1,13 @@
+{
+  "project": "test-langchain-project",
+  "version": "1.0.0",
+  "initialized": "2025-10-18T04:50:24.937Z",
+  "backend": {
+    "port": 3000,
+    "host": "localhost"
+  },
+  "dashboard": {
+    "port": 5173,
+    "host": "localhost"
+  }
+}

@@ -12,9 +12,6 @@ export declare class TraceClient {
     /**
      * Connect to WebSocket server
      */
-    /**
-     * Connect to WebSocket server
-     */
     private connect;
     /**
      * Send event to backend

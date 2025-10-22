@@ -78,10 +78,38 @@ export class EventSerializer {
 
     const rates = pricing[model] || pricing["gpt-3.5-turbo"];
 
-    return (
-      (tokens.prompt / 1000) * rates.input +
-      (tokens.completion / 1000) * rates.output
-    );
+    // If we have actual token counts, use them
+    if (tokens.prompt > 0 || tokens.completion > 0) {
+      return (
+        (tokens.prompt / 1000) * rates.input +
+        (tokens.completion / 1000) * rates.output
+      );
+    }
+
+    // If no token data, return a minimal cost to indicate the operation happened
+    return 0.0001; // $0.0001 as a base cost for any LLM operation
+  }
+
+  /**
+   * Calculate cost for tool operations
+   */
+  static calculateToolCost(toolName: string, latency: number): number {
+    // Tools typically have minimal costs, but we can estimate based on complexity
+    const toolCosts: Record<string, number> = {
+      "search": 0.00005,      // Search operations
+      "calculator": 0.00001,  // Simple calculations
+      "weather": 0.00002,     // API calls
+      "web_search": 0.00005,  // Web search
+      "file_read": 0.00001,   // File operations
+      "database": 0.00003     // Database queries
+    };
+
+    const baseCost = toolCosts[toolName] || 0.00002; // Default cost for unknown tools
+    
+    // Add a small latency-based cost (longer operations cost slightly more)
+    const latencyCost = Math.min(latency / 1000000, 0.00001); // Max $0.00001 for latency
+    
+    return baseCost + latencyCost;
   }
 
   /**

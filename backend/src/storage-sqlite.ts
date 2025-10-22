@@ -32,8 +32,9 @@ class SQLiteStorage {
     // Enable WAL mode for better concurrency
     this.db.pragma("journal_mode = WAL");
 
-    // Initialize schema
-    this.initSchema();
+    // NOTE: Schema initialization moved to database/schema.ts
+    // Do NOT initialize schema here to avoid conflicts
+    // this.initSchema();
 
     console.log(`📁 SQLite database: ${dbPath}`);
   }
@@ -76,6 +77,8 @@ class SQLiteStorage {
         tokens_total INTEGER,
         cost REAL,
         latency INTEGER,
+        reasoning TEXT,
+        agent_actions TEXT,
         
         -- Tool fields
         tool_name TEXT,
@@ -136,12 +139,12 @@ class SQLiteStorage {
       INSERT INTO events (
         event_id, trace_id, run_id, parent_run_id, timestamp, type,
         model, prompts, response, tokens_prompt, tokens_completion, tokens_total,
-        cost, latency, tool_name, tool_input, tool_output,
+        cost, latency, reasoning, agent_actions, tool_name, tool_input, tool_output,
         chain_name, chain_inputs, chain_outputs, error, stack, metadata
       ) VALUES (
         ?, ?, ?, ?, ?, ?,
         ?, ?, ?, ?, ?, ?,
-        ?, ?, ?, ?, ?,
+        ?, ?, ?, ?, ?, ?, ?,
         ?, ?, ?, ?, ?, ?
       )
     `);
@@ -178,6 +181,8 @@ class SQLiteStorage {
           event.tokens?.total || null,
           event.cost || null,
           event.latency || null,
+          event.reasoning || null,
+          event.agentActions ? JSON.stringify(event.agentActions) : null,
 
           // Tool fields
           event.toolName || null,
@@ -415,6 +420,7 @@ class SQLiteStorage {
       parentRunId: row.parent_run_id,
       timestamp: row.timestamp,
       type: row.type,
+      status: row.status || "complete",
       metadata: JSON.parse(row.metadata || "{}")
     };
 

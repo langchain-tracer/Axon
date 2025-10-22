@@ -69,6 +69,13 @@ export interface LLMEndEvent extends BaseEvent {
   };
   cost?: number;
   latency: number;
+  reasoning?: string;
+  agentActions?: Array<{
+    tool: string;
+    toolInput: any;
+    log: string;
+    messageLog?: any[];
+  }>;
 }
 
 export interface ToolStartEvent extends BaseEvent {
@@ -81,7 +88,15 @@ export interface ToolEndEvent extends BaseEvent {
   type: 'tool_end';
   toolName: string;
   output: string;
+  cost?: number;
   latency: number;
+  reasoning?: string;
+  agentActions?: Array<{
+    tool: string;
+    toolInput: any;
+    log: string;
+    messageLog?: any[];
+  }>;
 }
 
 export interface ChainStartEvent extends BaseEvent {
@@ -95,12 +110,59 @@ export interface ChainEndEvent extends BaseEvent {
   chainName: string;
   outputs: Record<string, any>;
   latency: number;
+  reasoning?: string;
+  agentActions?: Array<{
+    tool: string;
+    toolInput: any;
+    log: string;
+    messageLog?: any[];
+  }>;
 }
 
 export interface ErrorEvent extends BaseEvent {
   type: 'error';
   error: string;
   stack?: string;
+}
+
+export interface TextEvent extends BaseEvent {
+  type: 'text';
+  text: string;
+}
+
+export interface AgentActionEvent extends BaseEvent {
+  type: 'agent_action';
+  action: {
+    tool: string;
+    toolInput: any;
+    log: string;
+    messageLog?: any[];
+  };
+}
+
+export interface AgentEndEvent extends BaseEvent {
+  type: 'agent_end';
+  output: any;
+  reasoning?: string[];
+  agentActions?: Array<{
+    tool: string;
+    toolInput: any;
+    log: string;
+    messageLog?: any[];
+  }>;
+}
+
+export interface RetrieverStartEvent extends BaseEvent {
+  type: 'retriever_start';
+  query: string;
+}
+
+export interface RetrieverEndEvent extends BaseEvent {
+  type: 'retriever_end';
+  documents: Array<{
+    pageContent: string;
+    metadata: any;
+  }>;
 }
 
 export type TraceEvent = 
@@ -110,7 +172,12 @@ export type TraceEvent =
   | ToolEndEvent 
   | ChainStartEvent 
   | ChainEndEvent 
-  | ErrorEvent;
+  | ErrorEvent
+  | TextEvent
+  | AgentActionEvent
+  | AgentEndEvent
+  | RetrieverStartEvent
+  | RetrieverEndEvent;
 
 export interface RunData {
   runId: string;
