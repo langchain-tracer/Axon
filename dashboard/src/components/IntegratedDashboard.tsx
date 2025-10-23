@@ -23,7 +23,12 @@ import {
     BarChart3,
     GitBranch,
     Brain,
-    Play
+    Play,
+    Eye, 
+    Zap, 
+    Wifi,
+    Link,
+    Unplug
 } from "lucide-react";
 
 import { TraceList } from "./TraceList";
@@ -32,12 +37,13 @@ import CustomNode from "./CustomNode";
 import CostView from "./CostView";
 import ToolsView from "./ToolsView";
 import DependencyView from "./DependencyView";
-import { TimelineView } from "./AnalyticsComponents";
+import TimelineView from "./TimelineView";
 import CostProjections from "./CostProjections";
 import AnomalyDetectionView from "./AnomalyDetectionView";
 import IntelligentAnomalyView from "./IntelligentAnomalyView";
 import ReplayInterface from "./ReplayInterface";
 import ReplayResults from "./ReplayResults";
+import ReplaySidebar from "./ReplaySidebar";
 
 interface TraceData {
   trace: any;
@@ -87,6 +93,13 @@ const IntegratedDashboardContent = () => {
     const [selectedNode, setSelectedNode] = useState<Node | null>(null);
     const [showReplayInterface, setShowReplayInterface] = useState(false);
     const [replayResult, setReplayResult] = useState<any>(null);
+    const [showReplaySidebar, setShowReplaySidebar] = useState(false);
+    const [replayState, setReplayState] = useState({
+        isPlaying: false,
+        currentTime: 0,
+        totalTime: 0,
+        speed: 1
+    });
     const { setCenter } = useReactFlow();
 
 
@@ -115,6 +128,26 @@ const IntegratedDashboardContent = () => {
             }
         }
     }, [lastUpdate, selectedTraceId]);
+    
+    // Handle replay navigation from sidebar
+    useEffect(() => {
+        const handleOpenReplay = (event: CustomEvent) => {
+            const { nodeId } = event.detail;
+            const node = nodes.find(n => n.id === nodeId);
+            if (node) {
+                setSelectedNode(node);
+                setShowReplayInterface(true); // Open the replay interface directly
+                setShowReplaySidebar(false); // Close the sidebar when navigating to replay
+            }
+        };
+        
+        window.addEventListener('openReplay' as any, handleOpenReplay as any);
+        return () => {
+            window.removeEventListener('openReplay' as any, handleOpenReplay as any);
+        };
+    }, [nodes]);
+    
+    console.log(selectedNode, 'selectedNode/n/n/n/n');
 
     /**
      * Fetches trace data from the backend API and transforms it for visualization
@@ -141,6 +174,9 @@ const IntegratedDashboardContent = () => {
             
             const data = await response.json();
             setTraceData(data);
+            console.log(data, 'data/n/n/n/n');
+            console.log(data.nodes, 'data.nodes/n/n/n/n');
+            console.log(data.edges, 'data.edges/n/n/n/n');
             
             // Transform backend data to ReactFlow format with enhanced step names and costs
             
@@ -204,17 +240,22 @@ const IntegratedDashboardContent = () => {
              */
             const getStepType = (node: any): string => {
                 switch (node.type) {
+                    case 'llm':
                     case 'llm_start':
                     case 'llm_end':
-                        return 'LLM';
+                    case 'llm_call':
+                        return 'LLM';      // Blue
+                    case 'tool':
                     case 'tool_start':
                     case 'tool_end':
-                        return 'TOOL';
+                    case 'tool_invocation':
+                        return 'TOOL';     // Green
+                    case 'chain':
                     case 'chain_start':
                     case 'chain_end':
-                        return 'DECISION';
+                        return 'DECISION'; // Purple
                     default:
-                        return 'STEP';
+                        return 'STEP';     // Gray
                 }
             };
 
@@ -243,7 +284,8 @@ const IntegratedDashboardContent = () => {
                 data: {
                     ...node,
                     label: generateStepName(node),
-                    type: getStepType(node),
+                    type: node.type,  // Keep original type for color mapping
+                    stepType: getStepType(node),  // Display label
                     cost: calculateCost(node),
                     latency: node.latency || 0,
                     status: node.status || 'complete',
@@ -319,14 +361,12 @@ const IntegratedDashboardContent = () => {
      */
     const handleNodeClick = useCallback((_: React.MouseEvent, node: Node) => {
         setSelectedNode(node);
-        setCenter(node.position.x, node.position.y, { zoom: 1.2 });
+        // Removed auto-centering to allow free panning and exploration
+        // setCenter(node.position.x, node.position.y, { zoom: 1.2 });
         
-        // If we're in flow mode, switch to replay mode and open the replay interface
-        if (viewMode === 'flow') {
-            setViewMode('replay');
-            setShowReplayInterface(true);
-        }
-    }, [setCenter, viewMode]);
+        // Automatically show the node details sidebar when a node is clicked
+        setShowReplaySidebar(true);
+    }, []);
 
     /**
      * Handles initiating replay for a specific node
@@ -379,16 +419,14 @@ const IntegratedDashboardContent = () => {
     const getConnectionStatus = () => {
         if (connected) {
             return (
-                <div className="flex items-center gap-2 text-green-400">
-                    <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
-                    <span className="text-sm">Connected</span>
+                <div className="flex items-center gap-2 bg-green-500/10 border border-green-500/30 px-3 py-1.5 rounded-md">
+                    <Zap className="text-sm font-medium text-green-400"/> 
                 </div>
             );
         }
         return (
-            <div className="flex items-center gap-2 text-red-400">
-                <div className="w-2 h-2 bg-red-400 rounded-full"></div>
-                <span className="text-sm">Disconnected</span>
+            <div className="flex items-center gap-2 bg-red-500/10 border border-red-500/30 px-3 py-1.5 rounded-md">
+                <Unplug className="text-sm font-medium text-red-400"/>
             </div>
         );
     };
@@ -406,9 +444,21 @@ const IntegratedDashboardContent = () => {
                 {/* Header */}
                 <div className="bg-slate-900 border-b border-slate-700 p-4 flex items-center justify-between">
                     <div className="flex items-center gap-4">
-                        <Network className="w-6 h-6 text-blue-400" />
-                        <h1 className="text-xl font-bold">Agent Trace Visualizer</h1>
-                        {getConnectionStatus()}
+                        <img 
+                            src="/Axon-Web-Favicon.svg" 
+                            alt="AXON" 
+                            className="h-[50px] w-[50px] flex-shrink-0"
+                        />
+                        <img 
+                            src="/AXON.svg" 
+                            alt="AXON-TITLE" 
+                            className="h-[80px] w-[80px] flex-shrink-0"
+                        />
+                      
+                       
+                       <div>
+                        
+                       </div>
                     </div>
                     <div className="flex items-center gap-4">
                         <div className="flex gap-1 bg-slate-800 border border-slate-700 rounded-lg p-1">
@@ -497,8 +547,8 @@ const IntegratedDashboardContent = () => {
                                         : 'text-slate-300 hover:text-white hover:bg-slate-700'
                                 }`}
                             >
-                                <Brain className="w-4 h-4 inline mr-1" />
-                                AI Anomalies
+                                <Brain className="w-4 h-4 inline mr-1" /> 
+                                IAD
                             </button>
                             <button 
                                 onClick={() => setViewMode('replay')} 
@@ -512,6 +562,14 @@ const IntegratedDashboardContent = () => {
                                 Replay
                             </button>
                         </div>
+                        <div>
+
+                        </div>
+                        {getConnectionStatus()}
+                        <div>
+
+                        </div>
+
                         <div className="flex items-center gap-2 bg-green-600/20 border border-green-500 px-4 py-2 rounded-lg font-bold">
                             <DollarSign className="w-4 h-4 text-green-400" />
                             <span className="text-green-400">${stats.totalCost.toFixed(4)}</span>
@@ -556,6 +614,16 @@ const IntegratedDashboardContent = () => {
                                         nodeTypes={nodeTypes} 
                                         fitView 
                                         className="bg-slate-950"
+                                        panOnDrag={true}
+                                        panOnScroll={true}
+                                        panOnScrollSpeed={0.5}
+                                        zoomOnScroll={false}
+                                        zoomOnPinch={true}
+                                        zoomOnDoubleClick={false}
+                                        preventScrolling={false}
+                                        nodesDraggable={false}
+                                        nodesConnectable={false}
+                                        elementsSelectable={true}
                                     >
                                         <Controls 
                                             className="react-flow-controls"
@@ -590,38 +658,49 @@ const IntegratedDashboardContent = () => {
                             
                             {viewMode === 'cost' && (
                                 <CostView 
-                                    nodes={nodes.map(n => n.data)} 
+                                    nodes={nodes.map(n => n.data)}
+                                    edges={edges.map(e => ({
+                                        source: e.source,
+                                        target: e.target,
+                                        type: e.data?.type || 'data_flow',
+                                        weight: e.data?.weight || 1
+                                    }))}
+                                    onNodeClick={(node) => {
+                                        const reactFlowNode = nodes.find(n => n.data.id === node.id);
+                                        if (reactFlowNode) {
+                                            handleNodeClick({} as any, reactFlowNode);
+                                        }
+                                    }}
+                                />
+                            )}
+                            
+                            {viewMode === 'tools' && (
+                                <ToolsView 
+                                    nodes={nodes.map(n => n.data)}
                                     onNodeSelect={(node) => {
                                         const reactFlowNode = nodes.find(n => n.data.id === node.id);
                                         if (reactFlowNode) {
                                             handleNodeClick({} as any, reactFlowNode);
                                         }
                                     }}
-                                    onShowProjections={() => setViewMode('projections')}
-                                />
-                            )}
-                            
-                            {viewMode === 'tools' && (
-                                <ToolsView 
-                                    nodes={nodes.map(n => n.data)} 
-                                    onNodeSelect={(node) => {
-                                        const reactFlowNode = nodes.find(n => n.data.id === node.id);
-                                        if (reactFlowNode) {
-                                            handleNodeClick({} as any, reactFlowNode);
-                                        }
-                                    }} 
                                 />
                             )}
                             
                             {viewMode === 'dependency' && (
                                 <DependencyView 
-                                    nodes={nodes.map(n => n.data)} 
-                                    onNodeSelect={(node) => {
+                                    nodes={nodes.map(n => n.data)}
+                                    edges={edges.map(e => ({
+                                        source: e.source,
+                                        target: e.target,
+                                        type: e.data?.type || 'data_flow',
+                                        weight: e.data?.weight || 1
+                                    }))}
+                                    onNodeClick={(node) => {
                                         const reactFlowNode = nodes.find(n => n.data.id === node.id);
                                         if (reactFlowNode) {
                                             handleNodeClick({} as any, reactFlowNode);
                                         }
-                                    }} 
+                                    }}
                                 />
                             )}
                             
@@ -779,6 +858,82 @@ const IntegratedDashboardContent = () => {
                         </>
                     )}
                 </div>
+                
+                {/* Replay Sidebar */}
+                {showReplaySidebar && (
+                    <div className="fixed right-0 top-0 h-full w-96 z-40">
+                        <ReplaySidebar
+                            selectedNode={selectedNode ? {
+                                id: selectedNode.id,
+                                type: selectedNode.data?.type || 'unknown',
+                                label: selectedNode.data?.label || 'Unknown Node',
+                                timestamp: selectedNode.data?.timestamp || Date.now(),
+                                status: selectedNode.data?.status || 'complete',
+                                cost: selectedNode.data?.cost || 0,
+                                latency: selectedNode.data?.latency || 0,
+                                tokens: selectedNode.data?.tokens,
+                                model: selectedNode.data?.model,
+                                reasoning: selectedNode.data?.reasoning,
+                                decisionContext: selectedNode.data?.decisionContext,
+                                alternatives: selectedNode.data?.alternatives,
+                                selectedAlternative: selectedNode.data?.selectedAlternative,
+                                confidence: selectedNode.data?.confidence,
+                                prompts: selectedNode.data?.prompts,
+                                response: selectedNode.data?.response,
+                                toolName: selectedNode.data?.toolName,
+                                toolInput: selectedNode.data?.toolInput,
+                                toolOutput: selectedNode.data?.toolOutput,
+                                error: selectedNode.data?.error,
+                                stateBefore: selectedNode.data?.stateBefore,
+                                stateAfter: selectedNode.data?.stateAfter,
+                                stateChanges: selectedNode.data?.stateChanges,
+                                context: selectedNode.data?.context,
+                                memoryUpdates: selectedNode.data?.memoryUpdates,
+                                performance: selectedNode.data?.performance
+                            } : null}
+                            replayState={replayState}
+                            onPlayPause={() => setReplayState(prev => ({ ...prev, isPlaying: !prev.isPlaying }))}
+                            onSeek={(time) => setReplayState(prev => ({ ...prev, currentTime: time }))}
+                            onSpeedChange={(speed) => setReplayState(prev => ({ ...prev, speed }))}
+                            onReset={() => setReplayState(prev => ({ ...prev, currentTime: 0, isPlaying: false }))}
+                            onClose={() => setShowReplaySidebar(false)}
+                            onNodeClick={(nodeId) => {
+                                const node = nodes.find(n => n.id === nodeId);
+                                if (node) {
+                                    handleNodeClick({} as any, node);
+                                }
+                            }}
+                            nodes={nodes.map(n => ({
+                                id: n.id,
+                                type: n.data?.type || 'unknown',
+                                label: n.data?.label || 'Unknown Node',
+                                timestamp: n.data?.timestamp || Date.now(),
+                                status: n.data?.status || 'complete',
+                                cost: n.data?.cost || 0,
+                                latency: n.data?.latency || 0,
+                                tokens: n.data?.tokens,
+                                model: n.data?.model,
+                                reasoning: n.data?.reasoning,
+                                decisionContext: n.data?.decisionContext,
+                                alternatives: n.data?.alternatives,
+                                selectedAlternative: n.data?.selectedAlternative,
+                                confidence: n.data?.confidence,
+                                prompts: n.data?.prompts,
+                                response: n.data?.response,
+                                toolName: n.data?.toolName,
+                                toolInput: n.data?.toolInput,
+                                toolOutput: n.data?.toolOutput,
+                                error: n.data?.error,
+                                stateBefore: n.data?.stateBefore,
+                                stateAfter: n.data?.stateAfter,
+                                stateChanges: n.data?.stateChanges,
+                                context: n.data?.context,
+                                memoryUpdates: n.data?.memoryUpdates,
+                                performance: n.data?.performance
+                            }))}
+                        />
+                    </div>
+                )}
                 
                 {/* Replay Interface Overlay */}
                 {showReplayInterface && selectedNode && traceData && (

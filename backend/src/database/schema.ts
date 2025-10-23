@@ -44,6 +44,7 @@ export function initializeSchema(): void {
       start_time INTEGER NOT NULL,
       end_time INTEGER,
       data TEXT NOT NULL,
+      model TEXT,
       cost REAL,
       tokens TEXT,
       latency INTEGER,

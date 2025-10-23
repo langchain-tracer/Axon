@@ -82,7 +82,11 @@ const ReplayResults: React.FC<ReplayResultsProps> = ({
     const newCost = result.totalCost || 0;
     const newLatency = result.totalLatency || 0;
     const newNodes = result.executedNodes.length;
-    const newTokens = Math.floor(originalTokens * 0.5); // Estimate based on modifications
+    // Calculate tokens based on actual executed nodes if available
+    const newTokens = result.executedNodes.reduce((sum: number, nodeId: string) => {
+      const node = originalTrace.nodes?.find((n: any) => n.id === nodeId);
+      return sum + (node?.tokens?.total || 0);
+    }, 0) || 0;
 
     const costSavings = originalCost - newCost;
     const costSavingsPercent = originalCost > 0 ? ((costSavings / originalCost) * 100) : 0;
