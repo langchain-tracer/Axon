@@ -32,13 +32,13 @@ export const TraceList: React.FC<TraceListProps> = ({ onTraceSelect, selectedTra
 
   const transformTraceData = (apiTrace: any): Trace => {
     return {
-      id: apiTrace.trace_id,
+      id: apiTrace.id || apiTrace.trace_id, // Support both column names
       project: apiTrace.project_name,
-      status: apiTrace.end_time ? 'complete' : 'running',
+      status: apiTrace.status || (apiTrace.end_time ? 'complete' : 'running'),
       timestamp: apiTrace.start_time,
-      description: apiTrace.metadata?.test || 'Agent execution',
-      nodeCount: apiTrace.nodeCount || 0,
-      cost: apiTrace.cost || 0,
+      description: apiTrace.metadata?.test || apiTrace.metadata?.projectName || 'Agent execution',
+      nodeCount: apiTrace.nodeCount || apiTrace.total_nodes || 0,
+      cost: apiTrace.cost || apiTrace.total_cost || 0,
       latency: apiTrace.end_time ? (apiTrace.end_time - apiTrace.start_time) : 0
     };
   };

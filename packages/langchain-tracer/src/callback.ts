@@ -17,7 +17,12 @@ import {
   ToolEndEvent,
   ChainStartEvent,
   ChainEndEvent,
-  ErrorEvent
+  ErrorEvent,
+  TextEvent,
+  AgentActionEvent,
+  AgentEndEvent,
+  RetrieverStartEvent,
+  RetrieverEndEvent
 } from "./types";
 
 /**
@@ -174,7 +179,7 @@ export class TracingCallbackHandler extends BaseCallbackHandler {
     runData.endTime = endTime;
     runData.status = "complete";
 
-    // Send event
+    // Send event with reasoning data
     const event: LLMEndEvent = {
       eventId: uuidv4(),
       traceId: this.traceId,
@@ -185,7 +190,10 @@ export class TracingCallbackHandler extends BaseCallbackHandler {
       response,
       tokens,
       cost,
-      latency
+      latency,
+      // Include reasoning collected from handleText
+      reasoning: runData.data.reasoning?.join('\n'),
+      agentActions: runData.data.agentActions
     };
 
     await this.client.sendEvent(event);
@@ -282,7 +290,7 @@ export class TracingCallbackHandler extends BaseCallbackHandler {
     runData.endTime = endTime;
     runData.status = "complete";
 
-    // Send event
+    // Send event with reasoning
     const event: ToolEndEvent = {
       eventId: uuidv4(),
       traceId: this.traceId,
@@ -293,7 +301,10 @@ export class TracingCallbackHandler extends BaseCallbackHandler {
       toolName: runData.data.toolName,
       output,
       cost: toolCost,
-      latency
+      latency,
+      // Include reasoning collected from handleText
+      reasoning: runData.data.reasoning?.join('\n'),
+      agentActions: runData.data.agentActions
     };
 
     await this.client.sendEvent(event);
@@ -366,7 +377,7 @@ export class TracingCallbackHandler extends BaseCallbackHandler {
     runData.endTime = endTime;
     runData.status = "complete";
 
-    // Send event
+    // Send event with reasoning
     const event: ChainEndEvent = {
       eventId: uuidv4(),
       traceId: this.traceId,
@@ -376,7 +387,10 @@ export class TracingCallbackHandler extends BaseCallbackHandler {
       type: "chain_end",
       chainName: runData.data.chainName,
       outputs,
-      latency
+      latency,
+      // Include reasoning collected from handleText
+      reasoning: runData.data.reasoning?.join('\n'),
+      agentActions: runData.data.agentActions
     };
 
     this.client.sendEvent(event);
@@ -415,6 +429,160 @@ export class TracingCallbackHandler extends BaseCallbackHandler {
       type: "error",
       error: message,
       stack
+    };
+
+    await this.client.sendEvent(event);
+  }
+
+  /**
+   * Called when text is emitted during execution
+   * 
+   * This captures LLM thinking, agent reasoning, and intermediate text outputs
+   */
+  async handleText(text: string, runId: string): Promise<void> {
+    const runData = this.runDataMap.get(runId);
+    
+    // Store reasoning text with the run data
+    if (runData) {
+      if (!runData.data.reasoning) {
+        runData.data.reasoning = [];
+      }
+      runData.data.reasoning.push(text);
+    }
+
+    // Send text event for real-time display
+    const event: TextEvent = {
+      eventId: uuidv4(),
+      traceId: this.traceId,
+      runId,
+      parentRunId: runData?.parentRunId,
+      timestamp: Date.now(),
+      type: "text" as const,
+      text,
+      metadata: this.config.metadata
+    };
+
+    await this.client.sendEvent(event);
+  }
+
+  /**
+   * Called when an agent takes an action
+   * 
+   * This captures the agent's decision-making process, including:
+   * - What tool the agent chose to use
+   * - Why the agent made that choice
+   * - The reasoning behind the decision
+   */
+  async handleAgentAction(
+    action: any,
+    runId: string
+  ): Promise<void> {
+    const runData = this.runDataMap.get(runId);
+    
+    // Extract reasoning from the action
+    const reasoning = {
+      tool: action.tool,
+      toolInput: action.toolInput,
+      log: action.log, // This contains the agent's thinking!
+      messageLog: action.messageLog
+    };
+
+    // Store with run data
+    if (runData) {
+      if (!runData.data.agentActions) {
+        runData.data.agentActions = [];
+      }
+      runData.data.agentActions.push(reasoning);
+    }
+
+    // Send agent action event
+    const event: AgentActionEvent = {
+      eventId: uuidv4(),
+      traceId: this.traceId,
+      runId,
+      parentRunId: runData?.parentRunId,
+      timestamp: Date.now(),
+      type: "agent_action" as const,
+      action: reasoning,
+      metadata: this.config.metadata
+    };
+
+    await this.client.sendEvent(event);
+  }
+
+  /**
+   * Called when an agent completes execution
+   */
+  async handleAgentEnd(
+    output: any,
+    runId: string
+  ): Promise<void> {
+    const runData = this.runDataMap.get(runId);
+    
+    // Send agent end event with all collected reasoning
+    const event: AgentEndEvent = {
+      eventId: uuidv4(),
+      traceId: this.traceId,
+      runId,
+      parentRunId: runData?.parentRunId,
+      timestamp: Date.now(),
+      type: "agent_end" as const,
+      output,
+      reasoning: runData?.data.reasoning,
+      agentActions: runData?.data.agentActions,
+      metadata: this.config.metadata
+    };
+
+    await this.client.sendEvent(event);
+  }
+
+  /**
+   * Called when a retriever starts (for RAG systems)
+   */
+  async handleRetrieverStart(
+    retriever: Serialized,
+    query: string,
+    runId: string,
+    parentRunId?: string,
+    tags?: string[],
+    metadata?: Record<string, any>
+  ): Promise<void> {
+    const event: RetrieverStartEvent = {
+      eventId: uuidv4(),
+      traceId: this.traceId,
+      runId,
+      parentRunId,
+      timestamp: Date.now(),
+      type: "retriever_start" as const,
+      query,
+      metadata: {
+        ...this.config.metadata,
+        ...metadata,
+        tags
+      }
+    };
+
+    await this.client.sendEvent(event);
+  }
+
+  /**
+   * Called when a retriever completes
+   */
+  async handleRetrieverEnd(
+    documents: any[],
+    runId: string
+  ): Promise<void> {
+    const event: RetrieverEndEvent = {
+      eventId: uuidv4(),
+      traceId: this.traceId,
+      runId,
+      timestamp: Date.now(),
+      type: "retriever_end" as const,
+      documents: documents.map(doc => ({
+        pageContent: doc.pageContent,
+        metadata: doc.metadata
+      })),
+      metadata: this.config.metadata
     };
 
     await this.client.sendEvent(event);
