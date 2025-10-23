@@ -24,7 +24,11 @@ import {
     GitBranch,
     Brain,
     Play,
-    Eye
+    Eye, 
+    Zap, 
+    Wifi,
+    Link,
+    Unplug
 } from "lucide-react";
 
 import { TraceList } from "./TraceList";
@@ -416,15 +420,13 @@ const IntegratedDashboardContent = () => {
         if (connected) {
             return (
                 <div className="flex items-center gap-2 bg-green-500/10 border border-green-500/30 px-3 py-1.5 rounded-md">
-                    <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
-                    <span className="text-sm font-medium text-green-400">Connected</span>
+                    <Zap className="text-sm font-medium text-green-400"/> 
                 </div>
             );
         }
         return (
             <div className="flex items-center gap-2 bg-red-500/10 border border-red-500/30 px-3 py-1.5 rounded-md">
-                <div className="w-2 h-2 bg-red-400 rounded-full"></div>
-                <span className="text-sm font-medium text-red-400">Disconnected</span>
+                <Unplug className="text-sm font-medium text-red-400"/>
             </div>
         );
     };
@@ -443,11 +445,20 @@ const IntegratedDashboardContent = () => {
                 <div className="bg-slate-900 border-b border-slate-700 p-4 flex items-center justify-between">
                     <div className="flex items-center gap-4">
                         <img 
-                            src="/logo-latest.svg" 
-                            alt="Agent Trace Visualizer" 
-                            className="h-8 w-auto"
+                            src="/Axon-Web-Favicon.svg" 
+                            alt="AXON" 
+                            className="h-[50px] w-[50px] flex-shrink-0"
                         />
-                        {getConnectionStatus()}
+                        <img 
+                            src="/AXON.svg" 
+                            alt="AXON-TITLE" 
+                            className="h-[80px] w-[80px] flex-shrink-0"
+                        />
+                      
+                       
+                       <div>
+                        
+                       </div>
                     </div>
                     <div className="flex items-center gap-4">
                         <div className="flex gap-1 bg-slate-800 border border-slate-700 rounded-lg p-1">
@@ -536,8 +547,8 @@ const IntegratedDashboardContent = () => {
                                         : 'text-slate-300 hover:text-white hover:bg-slate-700'
                                 }`}
                             >
-                                <Brain className="w-4 h-4 inline mr-1" />
-                                AI Anomalies
+                                <Brain className="w-4 h-4 inline mr-1" /> 
+                                IAD
                             </button>
                             <button 
                                 onClick={() => setViewMode('replay')} 
@@ -551,6 +562,14 @@ const IntegratedDashboardContent = () => {
                                 Replay
                             </button>
                         </div>
+                        <div>
+
+                        </div>
+                        {getConnectionStatus()}
+                        <div>
+
+                        </div>
+
                         <div className="flex items-center gap-2 bg-green-600/20 border border-green-500 px-4 py-2 rounded-lg font-bold">
                             <DollarSign className="w-4 h-4 text-green-400" />
                             <span className="text-green-400">${stats.totalCost.toFixed(4)}</span>
