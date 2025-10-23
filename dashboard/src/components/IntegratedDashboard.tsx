@@ -602,6 +602,111 @@ const IntegratedDashboardContent = () => {
                         </div>
                     ) : (
                         <>
+                            {/* Conversation Overview - Show human input and agent output */}
+                            {nodes.length > 0 && (
+                                <div className="bg-slate-900 border-b border-slate-700 p-4">
+                                    <div className="max-w-5xl mx-auto space-y-3">
+                                        {/* Human Input and Agent Output */}
+                                        {(() => {
+                                            // Find the root chain (AgentExecutor) - it should have chainInputs and chainOutputs
+                                            // and be one of the earliest nodes (parent of other chains)
+                                            const rootChain = nodes.find(n => 
+                                                n.data.type?.includes('chain') && 
+                                                n.data.chainInputs && 
+                                                n.data.chainOutputs &&
+                                                (!n.data.parentRunId || n.data.chainName?.toLowerCase().includes('agent'))
+                                            );
+                                            
+                                            if (!rootChain) return null;
+                                            
+                                            // Extract user input
+                                            let displayInput = '';
+                                            try {
+                                                const inputData = typeof rootChain.data.chainInputs === 'string' 
+                                                    ? JSON.parse(rootChain.data.chainInputs) 
+                                                    : rootChain.data.chainInputs;
+                                                
+                                                // Extract the most relevant field
+                                                if (inputData.input) {
+                                                    displayInput = inputData.input;
+                                                } else if (inputData.question) {
+                                                    displayInput = inputData.question;
+                                                } else if (inputData.query) {
+                                                    displayInput = inputData.query;
+                                                } else if (typeof inputData === 'string') {
+                                                    displayInput = inputData;
+                                                } else {
+                                                    displayInput = JSON.stringify(inputData, null, 2);
+                                                }
+                                            } catch {
+                                                displayInput = typeof rootChain.data.chainInputs === 'string' 
+                                                    ? rootChain.data.chainInputs 
+                                                    : JSON.stringify(rootChain.data.chainInputs, null, 2);
+                                            }
+                                            
+                                            // Extract agent output from the same root chain
+                                            let displayOutput = '';
+                                            try {
+                                                const outputData = typeof rootChain.data.chainOutputs === 'string' 
+                                                    ? JSON.parse(rootChain.data.chainOutputs) 
+                                                    : rootChain.data.chainOutputs;
+                                                
+                                                // Extract the most relevant field
+                                                if (outputData.output) {
+                                                    displayOutput = outputData.output;
+                                                } else if (outputData.answer) {
+                                                    displayOutput = outputData.answer;
+                                                } else if (outputData.result) {
+                                                    displayOutput = outputData.result;
+                                                } else if (typeof outputData === 'string') {
+                                                    displayOutput = outputData;
+                                                } else {
+                                                    displayOutput = JSON.stringify(outputData, null, 2);
+                                                }
+                                            } catch {
+                                                displayOutput = typeof rootChain.data.chainOutputs === 'string' 
+                                                    ? rootChain.data.chainOutputs 
+                                                    : JSON.stringify(rootChain.data.chainOutputs, null, 2);
+                                            }
+                                            
+                                            return (
+                                                <>
+                                                    {/* Human Input */}
+                                                    {displayInput && (
+                                                        <div className="flex gap-3">
+                                                            <div className="flex-shrink-0 w-8 h-8 rounded-full bg-blue-500/20 flex items-center justify-center">
+                                                                <span className="text-blue-400 font-bold">👤</span>
+                                                            </div>
+                                                            <div className="flex-1">
+                                                                <div className="text-xs font-semibold text-blue-400 mb-1">Human</div>
+                                                                <div className="text-sm text-white bg-slate-800 rounded-lg p-3 border border-slate-700 whitespace-pre-wrap">
+                                                                    {displayInput}
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    )}
+                                                    
+                                                    {/* Agent Output */}
+                                                    {displayOutput && (
+                                                        <div className="flex gap-3">
+                                                            <div className="flex-shrink-0 w-8 h-8 rounded-full bg-green-500/20 flex items-center justify-center">
+                                                                <span className="text-green-400 font-bold">🤖</span>
+                                                            </div>
+                                                            <div className="flex-1">
+                                                                <div className="text-xs font-semibold text-green-400 mb-1">Agent</div>
+                                                                <div className="text-sm text-white bg-slate-800 rounded-lg p-3 border border-slate-700 whitespace-pre-wrap">
+                                                                    {displayOutput}
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    )}
+                                                </>
+                                            );
+                                        })()}
+                                    </div>
+                                </div>
+                            )}
+                            
                             {/* Render different views based on viewMode */}
                             {viewMode === 'flow' && (
                                 <div className="flex-1 relative">
