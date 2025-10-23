@@ -264,3 +264,7 @@
 {"level":"warn","message":"No pending node for chain end:","timestamp":"2025-10-23T15:02:59.395Z"}
 {"chainName":"ReActSingleInputOutputParser","inputs":{"id":["langchain_core","messages","AIMessageChunk"],"kwargs":{"additional_kwargs":{},"content":"I have gathered enough information about artificial intelligence.\nFinal Answer: I have found information about artificial intelligence.","invalid_tool_calls":[],"response_metadata":{"completion":0,"prompt":0},"tool_call_chunks":[],"tool_calls":[]},"lc":1,"type":"constructor"},"level":"info","message":"Chain Start Event Received:","runId":"126717d5-cd9b-403b-848c-6f9a61b688f8","timestamp":"2025-10-23T15:02:59.399Z"}
 {"level":"info","message":"Extracted User Query:","timestamp":"2025-10-23T15:02:59.399Z"}
+{"level":"info","message":"Connecting to SQLite database:","timestamp":"2025-10-23T15:21:08.794Z"}
+{"level":"info","message":"SQLite database connected","timestamp":"2025-10-23T15:21:09.107Z"}
+{"level":"info","message":"Initializing database schema...","timestamp":"2025-10-23T15:21:09.118Z"}
+{"level":"info","message":"Database schema initialized successfully","timestamp":"2025-10-23T15:21:09.120Z"}
