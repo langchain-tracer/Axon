@@ -17,6 +17,7 @@
   },
   "devDependencies": {
     "concurrently": "^8.2.2",
+    "supports-color": "^8",
     "typescript": "^5.3.3"
   },
   "dependencies": {
