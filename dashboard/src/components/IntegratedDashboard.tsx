@@ -659,18 +659,14 @@ const IntegratedDashboardContent = () => {
                             {viewMode === 'cost' && (
                                 <CostView 
                                     nodes={nodes.map(n => n.data)}
-                                    edges={edges.map(e => ({
-                                        source: e.source,
-                                        target: e.target,
-                                        type: e.data?.type || 'data_flow',
-                                        weight: e.data?.weight || 1
-                                    }))}
-                                    onNodeClick={(node) => {
+                                    onNodeSelect={(node) => {
                                         const reactFlowNode = nodes.find(n => n.data.id === node.id);
                                         if (reactFlowNode) {
-                                            handleNodeClick({} as any, reactFlowNode);
+                                            setSelectedNode(reactFlowNode);
+                                            setShowReplaySidebar(true);
                                         }
                                     }}
+                                    onShowProjections={() => setViewMode('projections')}
                                 />
                             )}
                             
@@ -680,7 +676,8 @@ const IntegratedDashboardContent = () => {
                                     onNodeSelect={(node) => {
                                         const reactFlowNode = nodes.find(n => n.data.id === node.id);
                                         if (reactFlowNode) {
-                                            handleNodeClick({} as any, reactFlowNode);
+                                            setSelectedNode(reactFlowNode);
+                                            setShowReplaySidebar(true);
                                         }
                                     }}
                                 />
@@ -689,16 +686,11 @@ const IntegratedDashboardContent = () => {
                             {viewMode === 'dependency' && (
                                 <DependencyView 
                                     nodes={nodes.map(n => n.data)}
-                                    edges={edges.map(e => ({
-                                        source: e.source,
-                                        target: e.target,
-                                        type: e.data?.type || 'data_flow',
-                                        weight: e.data?.weight || 1
-                                    }))}
-                                    onNodeClick={(node) => {
+                                    onNodeSelect={(node) => {
                                         const reactFlowNode = nodes.find(n => n.data.id === node.id);
                                         if (reactFlowNode) {
-                                            handleNodeClick({} as any, reactFlowNode);
+                                            setSelectedNode(reactFlowNode);
+                                            setShowReplaySidebar(true);
                                         }
                                     }}
                                 />
@@ -707,12 +699,14 @@ const IntegratedDashboardContent = () => {
                             {viewMode === 'timeline' && (
                                 <TimelineView 
                                     nodes={nodes.map(n => n.data)} 
-                                    onNodeSelect={(nodeId: any) => {
-                                        const reactFlowNode = nodes.find(n => n.id === nodeId);
+                                    onNodeSelect={(node: any) => {
+                                        const reactFlowNode = nodes.find(n => n.data.id === node.id);
                                         if (reactFlowNode) {
-                                            handleNodeClick({} as any, reactFlowNode);
+                                            setSelectedNode(reactFlowNode);
+                                            setShowReplaySidebar(true);
                                         }
                                     }} 
+                                    selectedNode={selectedNode?.data || null}
                                 />
                             )}
                             
