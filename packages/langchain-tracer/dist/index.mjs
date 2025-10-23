@@ -414,9 +414,6 @@ class TraceClient {
   /**
    * Connect to WebSocket server
    */
-  /**
-   * Connect to WebSocket server
-   */
   connect() {
     try {
       console.log(
@@ -616,7 +613,32 @@ class EventSerializer {
       "claude-3-haiku": { input: 25e-5, output: 125e-5 }
     };
     const rates = pricing[model] || pricing["gpt-3.5-turbo"];
-    return tokens.prompt / 1e3 * rates.input + tokens.completion / 1e3 * rates.output;
+    if (tokens.prompt > 0 || tokens.completion > 0) {
+      return tokens.prompt / 1e3 * rates.input + tokens.completion / 1e3 * rates.output;
+    }
+    return 1e-4;
+  }
+  /**
+   * Calculate cost for tool operations
+   */
+  static calculateToolCost(toolName, latency) {
+    const toolCosts = {
+      "search": 5e-5,
+      // Search operations
+      "calculator": 1e-5,
+      // Simple calculations
+      "weather": 2e-5,
+      // API calls
+      "web_search": 5e-5,
+      // Web search
+      "file_read": 1e-5,
+      // File operations
+      "database": 3e-5
+      // Database queries
+    };
+    const baseCost = toolCosts[toolName] || 2e-5;
+    const latencyCost = Math.min(latency / 1e6, 1e-5);
+    return baseCost + latencyCost;
   }
   /**
    * Extract model name from serialized data
@@ -636,6 +658,15 @@ class EventSerializer {
   }
 }
 class TracingCallbackHandler extends BaseCallbackHandler {
+  /**
+   * Creates a new TracingCallbackHandler instance
+   * 
+   * @param config - Optional configuration object
+   * @param config.endpoint - Backend server endpoint (default: "http://localhost:8000")
+   * @param config.projectName - Project name for organizing traces (default: "default")
+   * @param config.debug - Enable debug logging (default: false)
+   * @param config.metadata - Additional metadata to include with all events
+   */
   constructor(config) {
     super();
     this.name = "agent_trace_handler";
@@ -657,7 +688,19 @@ class TracingCallbackHandler extends BaseCallbackHandler {
     }
   }
   /**
-   * Called when LLM starts running
+   * Called when an LLM starts running
+   * 
+   * This method is automatically invoked by LangChain when an LLM begins processing.
+   * It captures the LLM configuration, prompts, and metadata, then sends a start
+   * event to the backend for visualization.
+   * 
+   * @param llm - Serialized LLM configuration object
+   * @param prompts - Array of input prompts being sent to the LLM
+   * @param runId - Unique identifier for this LLM run
+   * @param parentRunId - Optional parent run ID for nested operations
+   * @param extraParams - Additional parameters passed to the LLM
+   * @param tags - Optional tags for categorizing the run
+   * @param metadata - Optional metadata to include with the event
    */
   async handleLLMStart(llm, prompts, runId, parentRunId, extraParams, tags, metadata) {
     const serialized = EventSerializer.serializeSerialized(llm);
@@ -702,9 +745,17 @@ class TracingCallbackHandler extends BaseCallbackHandler {
     await this.client.sendEvent(event);
   }
   /**
-   * Called when LLM ends running
+   * Called when an LLM finishes running
+   * 
+   * This method is automatically invoked by LangChain when an LLM completes processing.
+   * It captures the output, calculates execution time, and sends an end event to the
+   * backend. It correlates with the corresponding start event using the runId.
+   * 
+   * @param output - LLMResult containing the generated responses and token usage
+   * @param runId - Unique identifier matching the corresponding start event
    */
   async handleLLMEnd(output, runId) {
+    var _a;
     console.log(runId, "runID");
     const runData = this.runDataMap.get(runId);
     if (!runData) {
@@ -727,16 +778,35 @@ class TracingCallbackHandler extends BaseCallbackHandler {
       response,
       tokens,
       cost,
-      latency
+      latency,
+      // Include reasoning collected from handleText
+      reasoning: (_a = runData.data.reasoning) == null ? void 0 : _a.join("\n"),
+      agentActions: runData.data.agentActions
     };
     await this.client.sendEvent(event);
   }
   /**
-   * Called when tool starts running
+   * Called when a tool starts running
+   * 
+   * This method is automatically invoked by LangChain when a tool begins execution.
+   * It captures the tool configuration, input parameters, and metadata, then sends
+   * a tool start event to the backend for visualization.
+   * 
+   * @param tool - Serialized tool configuration or tool name string
+   * @param input - Input parameters passed to the tool
+   * @param runId - Unique identifier for this tool run
+   * @param parentRunId - Optional parent run ID for nested operations
+   * @param tags - Optional tags for categorizing the run
+   * @param metadata - Optional metadata to include with the event
    */
   async handleToolStart(tool, input, runId, parentRunId, tags, metadata) {
-    const serialized = EventSerializer.serializeSerialized(tool);
-    const toolName = serialized.name;
+    let toolName;
+    if (typeof tool === "string") {
+      toolName = tool;
+    } else {
+      const serialized = EventSerializer.serializeSerialized(tool);
+      toolName = serialized.name;
+    }
     console.log("handleToolStart is running");
     this.runDataMap.set(runId, {
       runId,
@@ -767,9 +837,17 @@ class TracingCallbackHandler extends BaseCallbackHandler {
     await this.client.sendEvent(event);
   }
   /**
-   * Called when tool ends running
+   * Called when a tool finishes running
+   * 
+   * This method is automatically invoked by LangChain when a tool completes execution.
+   * It captures the output, calculates execution time, and sends a tool end event to
+   * the backend. It correlates with the corresponding start event using the runId.
+   * 
+   * @param output - The output result from the tool execution
+   * @param runId - Unique identifier matching the corresponding start event
    */
   async handleToolEnd(output, runId) {
+    var _a;
     const runData = this.runDataMap.get(runId);
     if (!runData) {
       console.error(`[AgentTrace] No run data found for ${runId}`);
@@ -777,6 +855,7 @@ class TracingCallbackHandler extends BaseCallbackHandler {
     }
     const endTime = Date.now();
     const latency = endTime - runData.startTime;
+    const toolCost = EventSerializer.calculateToolCost(runData.data.toolName, latency);
     runData.endTime = endTime;
     runData.status = "complete";
     const event = {
@@ -788,7 +867,11 @@ class TracingCallbackHandler extends BaseCallbackHandler {
       type: "tool_end",
       toolName: runData.data.toolName,
       output,
-      latency
+      cost: toolCost,
+      latency,
+      // Include reasoning collected from handleText
+      reasoning: (_a = runData.data.reasoning) == null ? void 0 : _a.join("\n"),
+      agentActions: runData.data.agentActions
     };
     await this.client.sendEvent(event);
   }
@@ -831,6 +914,7 @@ class TracingCallbackHandler extends BaseCallbackHandler {
    * Called when chain ends running
    */
   async handleChainEnd(outputs, runId) {
+    var _a;
     const runData = this.runDataMap.get(runId);
     if (!runData) {
       console.error(`[AgentTrace] No run data found for ${runId}`);
@@ -849,7 +933,10 @@ class TracingCallbackHandler extends BaseCallbackHandler {
       type: "chain_end",
       chainName: runData.data.chainName,
       outputs,
-      latency
+      latency,
+      // Include reasoning collected from handleText
+      reasoning: (_a = runData.data.reasoning) == null ? void 0 : _a.join("\n"),
+      agentActions: runData.data.agentActions
     };
     this.client.sendEvent(event);
   }
@@ -884,6 +971,123 @@ class TracingCallbackHandler extends BaseCallbackHandler {
     await this.client.sendEvent(event);
   }
   /**
+   * Called when text is emitted during execution
+   * 
+   * This captures LLM thinking, agent reasoning, and intermediate text outputs
+   */
+  async handleText(text, runId) {
+    const runData = this.runDataMap.get(runId);
+    if (runData) {
+      if (!runData.data.reasoning) {
+        runData.data.reasoning = [];
+      }
+      runData.data.reasoning.push(text);
+    }
+    const event = {
+      eventId: v4(),
+      traceId: this.traceId,
+      runId,
+      parentRunId: runData == null ? void 0 : runData.parentRunId,
+      timestamp: Date.now(),
+      type: "text",
+      text,
+      metadata: this.config.metadata
+    };
+    await this.client.sendEvent(event);
+  }
+  /**
+   * Called when an agent takes an action
+   * 
+   * This captures the agent's decision-making process, including:
+   * - What tool the agent chose to use
+   * - Why the agent made that choice
+   * - The reasoning behind the decision
+   */
+  async handleAgentAction(action, runId) {
+    const runData = this.runDataMap.get(runId);
+    const reasoning = {
+      tool: action.tool,
+      toolInput: action.toolInput,
+      log: action.log,
+      // This contains the agent's thinking!
+      messageLog: action.messageLog
+    };
+    if (runData) {
+      if (!runData.data.agentActions) {
+        runData.data.agentActions = [];
+      }
+      runData.data.agentActions.push(reasoning);
+    }
+    const event = {
+      eventId: v4(),
+      traceId: this.traceId,
+      runId,
+      parentRunId: runData == null ? void 0 : runData.parentRunId,
+      timestamp: Date.now(),
+      type: "agent_action",
+      action: reasoning,
+      metadata: this.config.metadata
+    };
+    await this.client.sendEvent(event);
+  }
+  /**
+   * Called when an agent completes execution
+   */
+  async handleAgentEnd(output, runId) {
+    const runData = this.runDataMap.get(runId);
+    const event = {
+      eventId: v4(),
+      traceId: this.traceId,
+      runId,
+      parentRunId: runData == null ? void 0 : runData.parentRunId,
+      timestamp: Date.now(),
+      type: "agent_end",
+      output,
+      reasoning: runData == null ? void 0 : runData.data.reasoning,
+      agentActions: runData == null ? void 0 : runData.data.agentActions,
+      metadata: this.config.metadata
+    };
+    await this.client.sendEvent(event);
+  }
+  /**
+   * Called when a retriever starts (for RAG systems)
+   */
+  async handleRetrieverStart(retriever, query, runId, parentRunId, tags, metadata) {
+    const event = {
+      eventId: v4(),
+      traceId: this.traceId,
+      runId,
+      parentRunId,
+      timestamp: Date.now(),
+      type: "retriever_start",
+      query,
+      metadata: {
+        ...this.config.metadata,
+        ...metadata,
+        tags
+      }
+    };
+    await this.client.sendEvent(event);
+  }
+  /**
+   * Called when a retriever completes
+   */
+  async handleRetrieverEnd(documents, runId) {
+    const event = {
+      eventId: v4(),
+      traceId: this.traceId,
+      runId,
+      timestamp: Date.now(),
+      type: "retriever_end",
+      documents: documents.map((doc) => ({
+        pageContent: doc.pageContent,
+        metadata: doc.metadata
+      })),
+      metadata: this.config.metadata
+    };
+    await this.client.sendEvent(event);
+  }
+  /**
    * Get trace ID
    */
   getTraceId() {
@@ -903,6 +1107,119 @@ class TracingCallbackHandler extends BaseCallbackHandler {
     this.runDataMap.clear();
   }
 }
+async function detectProjectConfig() {
+  if (typeof globalThis.window !== "undefined") {
+    return {
+      projectName: "browser",
+      endpoint: "http://localhost:3000",
+      debug: false
+    };
+  }
+  try {
+    const fs = await import("./__vite-browser-external-2Ng8QIWW.js");
+    const path = await import("./__vite-browser-external-2Ng8QIWW.js");
+    let currentDir = process.cwd();
+    const maxDepth = 10;
+    let depth = 0;
+    while (depth < maxDepth) {
+      const configPath = path.join(currentDir, ".agent-trace", "config.json");
+      if (fs.existsSync(configPath)) {
+        try {
+          const config = JSON.parse(fs.readFileSync(configPath, "utf8"));
+          return {
+            projectName: config.project,
+            endpoint: `http://${config.backend.host}:${config.backend.port}`,
+            debug: false
+          };
+        } catch (error) {
+          console.warn("[AgentTrace] Failed to parse config file:", error);
+          return null;
+        }
+      }
+      const parentDir = path.resolve(currentDir, "..");
+      if (parentDir === currentDir) {
+        break;
+      }
+      currentDir = parentDir;
+      depth++;
+    }
+    return null;
+  } catch (error) {
+    console.warn("[AgentTrace] Failed to load fs/path modules:", error);
+    return null;
+  }
+}
+async function detectProjectName() {
+  if (typeof globalThis.window !== "undefined") {
+    return "browser";
+  }
+  try {
+    const fs = await import("./__vite-browser-external-2Ng8QIWW.js");
+    const path = await import("./__vite-browser-external-2Ng8QIWW.js");
+    let currentDir = process.cwd();
+    const maxDepth = 10;
+    let depth = 0;
+    while (depth < maxDepth) {
+      const packageJsonPath = path.join(currentDir, "package.json");
+      if (fs.existsSync(packageJsonPath)) {
+        try {
+          const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, "utf8"));
+          return packageJson.name || "default";
+        } catch (error) {
+          console.warn("[AgentTrace] Failed to parse package.json:", error);
+          return "default";
+        }
+      }
+      const parentDir = path.resolve(currentDir, "..");
+      if (parentDir === currentDir) {
+        break;
+      }
+      currentDir = parentDir;
+      depth++;
+    }
+    return "default";
+  } catch (error) {
+    console.warn("[AgentTrace] Failed to load fs/path modules:", error);
+    return "default";
+  }
+}
+async function createAutoTracer(overrides) {
+  let config = await detectProjectConfig();
+  if (!config) {
+    config = {
+      projectName: await detectProjectName(),
+      endpoint: "http://localhost:3000",
+      debug: false
+    };
+  }
+  const finalConfig = {
+    ...config,
+    ...overrides
+  };
+  return new TracingCallbackHandler(finalConfig);
+}
+async function isAgentTraceConfigured() {
+  const config = await detectProjectConfig();
+  return config !== null;
+}
+async function getConfigurationStatus() {
+  const config = await detectProjectConfig();
+  if (config) {
+    return {
+      configured: true,
+      projectName: config.projectName || "default",
+      endpoint: config.endpoint || "http://localhost:3000",
+      source: "config-file"
+    };
+  }
+  const projectName = await detectProjectName();
+  return {
+    configured: false,
+    projectName,
+    endpoint: "http://localhost:3000",
+    source: projectName === "default" ? "default" : "package-json"
+  };
+}
 function createTracer(config) {
   return new TracingCallbackHandler(config);
 }
@@ -910,6 +1227,11 @@ export {
   EventSerializer,
   TraceClient,
   TracingCallbackHandler,
-  createTracer
+  createAutoTracer,
+  createTracer,
+  detectProjectConfig,
+  detectProjectName,
+  getConfigurationStatus,
+  isAgentTraceConfigured
 };
 //# sourceMappingURL=index.mjs.map

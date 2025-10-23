@@ -29,11 +29,11 @@
     "monitoring",
     "cli"
   ],
-  "author": "Agent Trace Team",
+  "author": "AXON AI TEAM",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/yourusername/agent-trace-visualizer"
+    "url": "https://github.com/langchain-tracer/Axon.git"
   },
   "dependencies": {
     "commander": "^11.1.0",
