@@ -1,9 +1,9 @@
 // src/hooks/index.ts
 // Custom React hooks for Agent Trace Visualizer
 
-import { useState, useEffect, useCallback, useRef } from "react";
-import { Node, Edge } from "reactflow";
-import { io, Socket } from "socket.io-client";
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { Node, Edge } from 'reactflow';
+import { io, Socket } from 'socket.io-client';
 import type {
   UseTraceDataOptions,
   UseAnomalyDetectionOptions,
@@ -12,14 +12,12 @@ import type {
   ReplayResult,
   TraceComparison,
   LayoutType,
-  FilterCriteria
-} from "../types";
+  FilterCriteria,
+} from '../types';
 
 // ============================================================================
 // useTraceData - Fetch and manage trace data
 // ============================================================================
-
-
 
 export const useTraceData = (
   traceId: string | null,
@@ -52,13 +50,13 @@ export const useTraceData = (
         id: node.id,
         type: node.type,
         position: { x: 0, y: 0 }, // Will be layouted
-        data: node
+        data: node,
       }));
 
       const flowEdges: Edge[] = data.edges.map((edge: any, index: number) => ({
         id: `e${edge.source}-${edge.target}`,
         source: edge.source,
-        target: edge.target
+        target: edge.target,
       }));
 
       setNodes(flowNodes);
@@ -66,7 +64,7 @@ export const useTraceData = (
       setError(null);
     } catch (err) {
       setError(err as Error);
-      console.error("Error fetching trace:", err);
+      console.error('Error fetching trace:', err);
     } finally {
       setLoading(false);
     }
@@ -89,7 +87,7 @@ export const useTraceData = (
 // ============================================================================
 
 interface RealtimeUpdate {
-  type: "node_start" | "node_complete" | "node_error" | "trace_complete";
+  type: 'node_start' | 'node_complete' | 'node_error' | 'trace_complete';
   traceId: string;
   nodeId?: string;
   data?: any;
@@ -105,46 +103,46 @@ export const useRealtimeUpdates = (traceId: string | null) => {
   const connect = useCallback(() => {
     if (!traceId) return;
 
-    const socket = io("http://localhost:3000", {
+    const socket = io('http://localhost:3000', {
       auth: {
-        projectName: "dashboard"
-      }
+        projectName: 'dashboard',
+      },
     });
     wsRef.current = socket;
 
-    socket.on("connect", () => {
-      console.log("Socket.IO connected:", socket.id);
+    socket.on('connect', () => {
+      console.log('Socket.IO connected:', socket.id);
       setConnected(true);
 
       // Subscribe to trace updates
-      socket.emit("watch_trace", traceId);
+      socket.emit('watch_trace', traceId);
     });
 
-    socket.on("trace_data", (data) => {
+    socket.on('trace_data', (data) => {
       setLastUpdate({
-        type: "trace_complete",
+        type: 'trace_complete',
         traceId: traceId,
         timestamp: Date.now(),
-        data: data
+        data: data,
       });
     });
 
-    socket.on("new_event", (event) => {
+    socket.on('new_event', (event) => {
       setLastUpdate({
-        type: "node_complete",
+        type: 'node_complete',
         traceId: traceId,
         timestamp: Date.now(),
-        data: event
+        data: event,
       });
     });
 
-    socket.on("disconnect", () => {
-      console.log("Socket.IO disconnected");
+    socket.on('disconnect', () => {
+      console.log('Socket.IO disconnected');
       setConnected(false);
 
       // Attempt to reconnect after 3 seconds
       reconnectTimeoutRef.current = setTimeout(() => {
-        console.log("Attempting to reconnect...");
+        console.log('Attempting to reconnect...');
         connect();
       }, 3000);
     });
@@ -176,8 +174,8 @@ interface ShortcutHandlers {
 export const useKeyboardShortcuts = (handlers: ShortcutHandlers) => {
   useEffect(() => {
     const handleKeyPress = (e: KeyboardEvent) => {
-      const key = `${e.ctrlKey || e.metaKey ? "ctrl+" : ""}${
-        e.shiftKey ? "shift+" : ""
+      const key = `${e.ctrlKey || e.metaKey ? 'ctrl+' : ''}${
+        e.shiftKey ? 'shift+' : ''
       }${e.key}`;
 
       if (handlers[key]) {
@@ -186,8 +184,8 @@ export const useKeyboardShortcuts = (handlers: ShortcutHandlers) => {
       }
     };
 
-    window.addEventListener("keydown", handleKeyPress);
-    return () => window.removeEventListener("keydown", handleKeyPress);
+    window.addEventListener('keydown', handleKeyPress);
+    return () => window.removeEventListener('keydown', handleKeyPress);
   }, [handlers]);
 };
 
@@ -195,7 +193,10 @@ export const useKeyboardShortcuts = (handlers: ShortcutHandlers) => {
 // useAnomalyDetection - Detect anomalies in trace
 // ============================================================================
 
-import { AnomalyDetector, Anomaly as DetectionAnomaly } from "../utils/AnomalyDetection";
+import {
+  AnomalyDetector,
+  Anomaly as DetectionAnomaly,
+} from '../utils/AnomalyDetection';
 
 // Fix NodeJS namespace issue
 declare global {
@@ -203,7 +204,6 @@ declare global {
     interface Timeout {}
   }
 }
-
 
 export const useAnomalyDetection = (
   nodes: Node[],
@@ -228,10 +228,10 @@ export const useAnomalyDetection = (
   }, []);
 
   const highSeverityCount = anomalies.filter(
-    (a) => a.severity === "high"
+    (a) => a.severity === 'high'
   ).length;
   const mediumSeverityCount = anomalies.filter(
-    (a) => a.severity === "medium"
+    (a) => a.severity === 'medium'
   ).length;
 
   return {
@@ -239,7 +239,7 @@ export const useAnomalyDetection = (
     dismissAnomaly,
     highSeverityCount,
     mediumSeverityCount,
-    hasAnomalies: anomalies.length > 0
+    hasAnomalies: anomalies.length > 0,
   };
 };
 
@@ -247,9 +247,7 @@ export const useAnomalyDetection = (
 // useTraceStatistics - Calculate trace statistics
 // ============================================================================
 
-import {
-  calculateStatistics,
-} from "../utils/UtilityFunctions";
+import { calculateStatistics } from '../utils/UtilityFunctions';
 
 export const useTraceStatistics = (nodes: Node[]) => {
   const [stats, setStats] = useState<TraceStatistics | null>(null);
@@ -277,7 +275,7 @@ export const useLocalStorage = <T>(key: string, initialValue: T) => {
       const item = window.localStorage.getItem(key);
       return item ? JSON.parse(item) : initialValue;
     } catch (error) {
-      console.error("Error reading from localStorage:", error);
+      console.error('Error reading from localStorage:', error);
       return initialValue;
     }
   });
@@ -290,7 +288,7 @@ export const useLocalStorage = <T>(key: string, initialValue: T) => {
         setStoredValue(valueToStore);
         window.localStorage.setItem(key, JSON.stringify(valueToStore));
       } catch (error) {
-        console.error("Error writing to localStorage:", error);
+        console.error('Error writing to localStorage:', error);
       }
     },
     [key, storedValue]
@@ -355,7 +353,7 @@ export const useNodeSelection = () => {
     selectNode,
     goBack,
     clearSelection,
-    canGoBack: selectionHistory.length > 1
+    canGoBack: selectionHistory.length > 1,
   };
 };
 
@@ -367,41 +365,41 @@ import {
   exportToJSON,
   exportToCSV,
   exportGraphAsImage,
-  downloadFile
-} from "../utils/UtilityFunctions";
+  downloadFile,
+} from '../utils/UtilityFunctions';
 
 export const useExport = (nodes: Node[], edges: Edge[]) => {
   const [exporting, setExporting] = useState(false);
 
   const exportData = useCallback(
-    async (format: "json" | "csv" | "png" | "svg") => {
+    async (format: 'json' | 'csv' | 'png' | 'svg') => {
       setExporting(true);
 
       try {
         switch (format) {
-          case "json":
+          case 'json':
             const jsonData = exportToJSON(nodes, edges, {
-              includeMetadata: true
+              includeMetadata: true,
             });
             downloadFile(
               jsonData,
               `trace-${Date.now()}.json`,
-              "application/json"
+              'application/json'
             );
             break;
 
-          case "csv":
+          case 'csv':
             const csvData = exportToCSV(nodes);
-            downloadFile(csvData, `trace-${Date.now()}.csv`, "text/csv");
+            downloadFile(csvData, `trace-${Date.now()}.csv`, 'text/csv');
             break;
 
-          case "png":
-          case "svg":
+          case 'png':
+          case 'svg':
             await exportGraphAsImage(format, `trace-${Date.now()}.${format}`);
             break;
         }
       } catch (error) {
-        console.error("Export failed:", error);
+        console.error('Export failed:', error);
         throw error;
       } finally {
         setExporting(false);
@@ -417,7 +415,7 @@ export const useExport = (nodes: Node[], edges: Edge[]) => {
 // useAutoLayout - Apply layout automatically
 // ============================================================================
 
-import { applyLayout } from "../utils/LayoutAlgorithms";
+import { applyLayout } from '../utils/LayoutAlgorithms';
 
 export const useAutoLayout = (
   nodes: Node[],
@@ -440,53 +438,59 @@ export const useAutoLayout = (
 // useReplay - Handle replay functionality
 // ============================================================================
 
+import {
+  ReplayEngine,
+  ReplayMode,
+  type ReplayOptions,
+  type ReplayModifications,
+} from '../utils/ReplayEngine';
 
-export const useReplay = () => {
+export const useReplay = (
+  replayEngine: ReplayEngine,
+  trace: any,
+  baseOptions?: Partial<ReplayOptions>
+) => {
   const [replaying, setReplaying] = useState(false);
   const [result, setResult] = useState<ReplayResult | null>(null);
 
   const replayFromNode = useCallback(
     async (
-      traceId: string,
       nodeId: string,
-      modifications: {
-        prompt?: string;
-        toolParams?: Record<string, any>;
-        systemMessage?: string;
-      }
+      modifications: ReplayModifications,
+      overrides?: Partial<ReplayOptions>
     ) => {
       setReplaying(true);
       setResult(null);
 
       try {
-        const response = await fetch("/api/replay", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ traceId, nodeId, modifications })
-        });
+        const options: ReplayOptions = {
+          mode: ReplayMode.SAFE,
+          mockExternalCalls: true,
+          useOriginalData: true,
+          ...baseOptions,
+          ...overrides,
+        };
 
-        if (!response.ok) {
-          throw new Error("Replay failed");
-        }
-
-        const data = await response.json();
+        const data = await replayEngine.executeReplay(
+          nodeId,
+          trace,
+          modifications,
+          options
+        );
         setResult(data);
         return data;
-      } catch (error) {
-        console.error("Replay error:", error);
-        throw error;
       } finally {
         setReplaying(false);
       }
     },
-    []
+    [replayEngine, trace, baseOptions]
   );
 
   return {
     replayFromNode,
     replaying,
     result,
-    clearResult: () => setResult(null)
+    clearResult: () => setResult(null),
   };
 };
 
@@ -494,7 +498,7 @@ export const useReplay = () => {
 // useTraceComparison - Compare two traces
 // ============================================================================
 
-import { compareTraces } from "../utils/UtilityFunctions";
+import { compareTraces } from '../utils/UtilityFunctions';
 
 export const useTraceComparison = (
   trace1Nodes: Node[] | null,
@@ -527,5 +531,5 @@ export default {
   useExport,
   useAutoLayout,
   useReplay,
-  useTraceComparison
+  useTraceComparison,
 };

@@ -15,11 +15,16 @@ export interface ReplayOptions {
   useOriginalData: boolean;
   confirmEachSideEffect: boolean;
   maxReplayDepth: number;
+  // NEW: live mode + injection points
+  liveMode?: boolean;
+  llm?: LLMCaller;
+  temperature?: number;
+  maxTokens?: number;
 }
 
 export enum ReplayMode {
   SAFE = 'safe',
-  SIMULATION = 'simulation', 
+  SIMULATION = 'simulation',
   WARNING = 'warning',
   BLOCKED = 'blocked'
 }
@@ -54,7 +59,16 @@ export interface StateSnapshot {
   checksums: Map<string, string>;
 }
 
-// Side Effect Detection
+// ✨ NEW: type your LLM caller
+export type LLMCaller = (args: {
+  model: string;
+  messages: Array<{ role: "system" | "user" | "assistant"; content: string }>;
+  temperature?: number;
+  maxTokens?: number;
+  signal?: AbortSignal;
+}) => Promise<string>;
+
+// ------------------------- Side Effect Detection -------------------------
 export class SideEffectDetector {
   private sideEffectPatterns = {
     email: [
@@ -81,12 +95,8 @@ export class SideEffectDetector {
 
   detectSideEffects(node: TraceNode): SideEffect[] {
     const effects: SideEffect[] = [];
-    
-    // Safety check for node.data
-    if (!node.data) {
-      return effects;
-    }
-    
+    if (!node.data) return effects;
+
     // Check tool name
     if (node.data.toolName) {
       const toolName = node.data.toolName.toLowerCase();
@@ -106,7 +116,7 @@ export class SideEffectDetector {
 
     // Check response content
     if (node.data.response) {
-      const response = node.data.response.toLowerCase();
+      const response = String(node.data.response).toLowerCase();
       for (const [type, patterns] of Object.entries(this.sideEffectPatterns)) {
         if (patterns.some(pattern => response.includes(pattern))) {
           effects.push({
@@ -156,7 +166,7 @@ export class SideEffectDetector {
   }
 }
 
-// State Snapshot Manager
+// ------------------------- State Snapshot Manager -------------------------
 export class StateSnapshotManager {
   private snapshots: Map<string, StateSnapshot> = new Map();
 
@@ -180,38 +190,30 @@ export class StateSnapshotManager {
   }
 
   private extractConversationHistory(trace: any, upToNodeId: string): any[] {
-    // Extract conversation history up to the specified node
     const history: any[] = [];
     const nodes = trace.nodes || [];
-    
+
     for (const node of nodes) {
       if (node.id === upToNodeId) break;
-      
-      if (node.type?.includes('llm')) {
-        history.push({
-          role: 'user',
-          content: node.prompt || node.input
-        });
+
+      if (String(node.type || '').includes('llm')) {
+        history.push({ role: 'user', content: node.prompt || node.input });
         if (node.response) {
-          history.push({
-            role: 'assistant', 
-            content: node.response
-          });
+          history.push({ role: 'assistant', content: node.response });
         }
       }
     }
-    
+
     return history;
   }
 
   private extractToolOutputs(trace: any, upToNodeId: string): Map<string, any> {
     const outputs = new Map<string, any>();
     const nodes = trace.nodes || [];
-    
+
     for (const node of nodes) {
       if (node.id === upToNodeId) break;
-      
-      if (node.type?.includes('tool') && node.toolName) {
+      if (String(node.type || '').includes('tool') && node.toolName) {
         outputs.set(node.toolName, {
           input: node.toolInput,
           output: node.response,
@@ -219,30 +221,27 @@ export class StateSnapshotManager {
         });
       }
     }
-    
+
     return outputs;
   }
 
   private extractContextVariables(trace: any, upToNodeId: string): Map<string, any> {
     const variables = new Map<string, any>();
     const nodes = trace.nodes || [];
-    
+
     for (const node of nodes) {
       if (node.id === upToNodeId) break;
-      
       if (node.metadata?.context) {
         Object.entries(node.metadata.context).forEach(([key, value]) => {
           variables.set(key, value);
         });
       }
     }
-    
+
     return variables;
   }
 
   private captureExternalState(): any {
-    // In a real implementation, this would capture current external state
-    // For now, return a placeholder
     return {
       timestamp: Date.now(),
       note: 'External state capture not implemented in demo'
@@ -251,13 +250,10 @@ export class StateSnapshotManager {
 
   private calculateChecksums(trace: any, upToNodeId: string): Map<string, string> {
     const checksums = new Map<string, string>();
-    
-    // Simple checksum calculation for demo
     const relevantData = JSON.stringify({
       nodes: trace.nodes?.slice(0, trace.nodes.findIndex((n: any) => n.id === upToNodeId) + 1),
       edges: trace.edges
     });
-    
     checksums.set('trace_data', this.simpleHash(relevantData));
     return checksums;
   }
@@ -267,13 +263,13 @@ export class StateSnapshotManager {
     for (let i = 0; i < str.length; i++) {
       const char = str.charCodeAt(i);
       hash = ((hash << 5) - hash) + char;
-      hash = hash & hash; // Convert to 32-bit integer
+      hash = hash & hash;
     }
     return hash.toString(36);
   }
 }
 
-// Mock Manager for Simulation Mode
+// ------------------------- Mock Manager -------------------------
 export class MockManager {
   private mockResponses: Map<string, any> = new Map();
   private originalResponses: Map<string, any> = new Map();
@@ -289,8 +285,7 @@ export class MockManager {
   private createMockResponse(node: TraceNode, effect: SideEffect): void {
     const mockResponse = this.generateMockResponse(effect.type, node);
     this.mockResponses.set(node.id, mockResponse);
-    
-    // Store original response for restoration
+
     if (node.data?.response) {
       this.originalResponses.set(node.id, node.data.response);
     }
@@ -299,39 +294,13 @@ export class MockManager {
   private generateMockResponse(type: string, node: TraceNode): any {
     switch (type) {
       case 'email':
-        return {
-          success: true,
-          messageId: `mock-email-${Date.now()}`,
-          simulated: true,
-          originalAction: 'email_send',
-          mockNote: 'Email sending was mocked during replay'
-        };
-      
+        return { success: true, messageId: `mock-email-${Date.now()}`, simulated: true, originalAction: 'email_send', mockNote: 'Email sending was mocked during replay' };
       case 'api_call':
-        return {
-          success: true,
-          data: node.data?.response || 'Mock API response',
-          simulated: true,
-          originalAction: 'api_call',
-          mockNote: 'API call was mocked during replay'
-        };
-      
+        return { success: true, data: node.data?.response || 'Mock API response', simulated: true, originalAction: 'api_call', mockNote: 'API call was mocked during replay' };
       case 'database_write':
-        return {
-          success: true,
-          recordId: `mock-record-${Date.now()}`,
-          simulated: true,
-          originalAction: 'database_write',
-          mockNote: 'Database write was mocked during replay'
-        };
-      
+        return { success: true, recordId: `mock-record-${Date.now()}`, simulated: true, originalAction: 'database_write', mockNote: 'Database write was mocked during replay' };
       default:
-        return {
-          success: true,
-          simulated: true,
-          originalAction: type,
-          mockNote: `${type} operation was mocked during replay`
-        };
+        return { success: true, simulated: true, originalAction: type, mockNote: `${type} operation was mocked during replay` };
     }
   }
 
@@ -349,7 +318,7 @@ export class MockManager {
   }
 }
 
-// Main Replay Engine
+// ------------------------- Replay Engine -------------------------
 export class ReplayEngine {
   private sideEffectDetector: SideEffectDetector;
   private stateSnapshotManager: StateSnapshotManager;
@@ -369,7 +338,6 @@ export class ReplayEngine {
   } {
     const nodesToReplay = this.getNodesFromPoint(startNodeId, trace);
     const allSideEffects: SideEffect[] = [];
-    
     for (const node of nodesToReplay) {
       const effects = this.sideEffectDetector.detectSideEffects(node);
       allSideEffects.push(...effects);
@@ -379,60 +347,35 @@ export class ReplayEngine {
     const warnings = this.generateWarnings(allSideEffects);
     const recommendations = this.generateRecommendations(allSideEffects, mode);
 
-    return {
-      mode,
-      sideEffects: allSideEffects,
-      warnings,
-      recommendations
-    };
+    return { mode, sideEffects: allSideEffects, warnings, recommendations };
   }
 
   private getNodesFromPoint(startNodeId: string, trace: any): TraceNode[] {
-    const nodes: TraceNode[] = [];
     const startIndex = trace.nodes.findIndex((n: any) => n.id === startNodeId);
-    
-    if (startIndex === -1) return nodes;
-    
-    // Get all nodes from start point onwards
+    if (startIndex === -1) return [];
     return trace.nodes.slice(startIndex);
   }
 
   private determineReplayMode(sideEffects: SideEffect[]): ReplayMode {
-    if (sideEffects.some(e => e.severity === 'critical' && !e.reversible)) {
-      return ReplayMode.BLOCKED;
-    }
-    
-    if (sideEffects.some(e => e.externalDependency)) {
-      return ReplayMode.WARNING;
-    }
-    
-    if (sideEffects.length > 0) {
-      return ReplayMode.SIMULATION;
-    }
-    
+    if (sideEffects.some(e => e.severity === 'critical' && !e.reversible)) return ReplayMode.BLOCKED;
+    if (sideEffects.some(e => e.externalDependency)) return ReplayMode.WARNING;
+    if (sideEffects.length > 0) return ReplayMode.SIMULATION;
     return ReplayMode.SAFE;
   }
 
   private generateWarnings(sideEffects: SideEffect[]): string[] {
     const warnings: string[] = [];
-    
     for (const effect of sideEffects) {
       switch (effect.severity) {
-        case 'critical':
-          warnings.push(`🚫 CRITICAL: ${effect.description} - Replay may not be safe`);
-          break;
-        case 'warning':
-          warnings.push(`⚠️ WARNING: ${effect.description} - External dependency detected`);
-          break;
+        case 'critical': warnings.push(`🚫 CRITICAL: ${effect.description} - Replay may not be safe`); break;
+        case 'warning': warnings.push(`⚠️ WARNING: ${effect.description} - External dependency detected`); break;
       }
     }
-    
     return warnings;
   }
 
   private generateRecommendations(sideEffects: SideEffect[], mode: ReplayMode): string[] {
     const recommendations: string[] = [];
-    
     switch (mode) {
       case ReplayMode.BLOCKED:
         recommendations.push('Consider modifying the agent to avoid critical side effects');
@@ -449,8 +392,77 @@ export class ReplayEngine {
         recommendations.push('Safe to replay - no side effects detected');
         break;
     }
-    
     return recommendations;
+  }
+
+  // Fallback for Node environments without 'performance'
+  private now(): number {
+    if (typeof performance !== 'undefined' && performance.now) return performance.now();
+    // Node fallback (ms)
+    // @ts-ignore
+    return Number(process.hrtime.bigint() / BigInt(1e6));
+  }
+
+  private orderTopologically(nodes: any[], trace: any): any[] {
+    // Basic Kahn’s algorithm over the subset of nodes provided
+    if (!Array.isArray(nodes) || nodes.length === 0) return nodes;
+
+    const within = new Set(nodes.map((n) => n.id));
+    const idToNode = new Map<string, any>(trace.nodes.map((n: any) => [n.id, n]));
+
+    const incoming = new Map<string, number>();
+    for (const n of nodes) incoming.set(n.id, 0);
+
+    for (const e of (trace.edges ?? [])) {
+      if (within.has(e.source) && within.has(e.target)) {
+        incoming.set(e.target, (incoming.get(e.target) || 0) + 1);
+      }
+    }
+
+    const adj = new Map<string, string[]>();
+    for (const e of (trace.edges ?? [])) {
+      if (within.has(e.source) && within.has(e.target)) {
+        if (!adj.has(e.source)) adj.set(e.source, []);
+        adj.get(e.source)!.push(e.target);
+      }
+    }
+
+    const queue: any[] = nodes.filter((n) => (incoming.get(n.id) || 0) === 0);
+    const out: any[] = [];
+
+    while (queue.length) {
+      const n = queue.shift()!;
+      out.push(n);
+      for (const nb of (adj.get(n.id) || [])) {
+        incoming.set(nb, (incoming.get(nb) || 0) - 1);
+        if ((incoming.get(nb) || 0) === 0) {
+          const nbNode = idToNode.get(nb);
+          if (nbNode) queue.push(nbNode);
+        }
+      }
+    }
+
+    return out.length ? out : nodes;
+  }
+
+  private syntheticLLMFromOriginal(node: any, modifications: ReplayModifications): string {
+    const original = node.data?.response ?? node.response ?? "";
+    const promptChanged = modifications.promptChanges?.has(node.id);
+    const modelChanged  = modifications.modelChanges?.has(node.id);
+    const tag = [promptChanged ? "prompt" : "", modelChanged ? "model" : ""].filter(Boolean).join("+");
+    return tag ? `[simulated: ${tag} changed]\n${original}` : original;
+  }
+
+  private async replayToolNode(node: any, _mods: ReplayModifications, options: ReplayOptions): Promise<any> {
+    if (options.mockExternalCalls) {
+      const mock = this.mockManager.getMockResponse(node.id);
+      if (mock) return mock;
+    }
+    return node.data?.response ?? node.response ?? null;
+  }
+
+  private replayGenericNode(node: any, _mods: ReplayModifications, _opts: ReplayOptions): any {
+    return node.data?.response ?? node.response ?? null;
   }
 
   async executeReplay(
@@ -460,9 +472,8 @@ export class ReplayEngine {
     options: ReplayOptions
   ): Promise<ReplayResult> {
     try {
-      // 1. Analyze safety
+      // 1) Safety gate
       const safetyAnalysis = this.analyzeReplaySafety(startNodeId, trace);
-      
       if (safetyAnalysis.mode === ReplayMode.BLOCKED) {
         return {
           success: false,
@@ -471,30 +482,87 @@ export class ReplayEngine {
           sideEffects: safetyAnalysis.sideEffects,
           totalCost: 0,
           totalLatency: 0,
-          error: 'Replay blocked due to critical side effects'
+          error: "Replay blocked due to critical side effects",
         };
       }
 
-      // 2. Capture state snapshot
+      // 2) Snapshot (for potential rollback/debug)
       const snapshot = this.stateSnapshotManager.captureSnapshot(startNodeId, trace);
-      
-      // 3. Setup mocks if needed
+
+      // 3) Determine nodes to run (topologically from start)
+      const nodesFromStart = this.getNodesFromPoint(startNodeId, trace);
+      const toRun = this.orderTopologically(nodesFromStart, trace);
+
+      // 4) Setup mocks for external/tool calls if requested
       if (options.mockExternalCalls) {
-        const nodesToReplay = this.getNodesFromPoint(startNodeId, trace);
-        for (const node of nodesToReplay) {
+        for (const node of toRun) {
           const effects = this.sideEffectDetector.detectSideEffects(node);
           this.mockManager.setupMocks(node, effects);
         }
       }
 
-      // 4. Execute replay
-      const result = await this.executeReplayNodes(
-        startNodeId,
-        trace,
-        modifications,
-        options,
-        safetyAnalysis.sideEffects
-      );
+      const executedNodes: string[] = [];
+      const skippedNodes: string[] = [];
+      let totalCost = 0;
+      let totalLatency = 0;
+
+      const resolveSystemInstruction = (node: any) =>
+        modifications.systemInstructionUpdates?.get(node.id) ?? node.system ?? "";
+      const resolvePrompt = (node: any) =>
+        modifications.promptChanges?.get(node.id) ?? node.prompt ?? node.input ?? "";
+      const resolveModel = (node: any) =>
+        modifications.modelChanges?.get(node.id) ?? node.model ?? "gpt-4o-mini";
+
+      for (const node of toRun) {
+        const t0 = this.now();
+        const typeStr = String(node.type || "");
+        const isLLM = typeStr.includes("llm");
+        const isTool = typeStr.includes("tool");
+
+        try {
+          if (isLLM) {
+            const sys = resolveSystemInstruction(node);
+            const user = resolvePrompt(node);
+            const model = resolveModel(node);
+
+            if (options.liveMode && options.llm) {
+              const text = await options.llm({
+                model,
+                messages: [
+                  ...(sys ? [{ role: "system", content: String(sys) }] : []),
+                  { role: "user", content: String(user) },
+                ],
+                temperature: options.temperature ?? 0.7,
+                maxTokens: options.maxTokens ?? 512,
+              });
+              node.simulatedOutput = text;
+            } else {
+              node.simulatedOutput = this.syntheticLLMFromOriginal(node, modifications);
+            }
+          } else if (isTool) {
+            node.simulatedOutput = await this.replayToolNode(node, modifications, options);
+          } else {
+            node.simulatedOutput = this.replayGenericNode(node, modifications, options);
+          }
+
+          executedNodes.push(node.id);
+        } catch (_err) {
+          skippedNodes.push(node.id);
+        } finally {
+          const t1 = this.now();
+          totalLatency += (t1 - t0);
+        }
+      }
+
+      const result: ReplayResult = {
+        success: true,
+        executedNodes,
+        skippedNodes,
+        sideEffects: safetyAnalysis.sideEffects,
+        totalCost,
+        totalLatency,
+        newTraceId: `replay-${Date.now()}`
+      };
 
       return result;
     } catch (error) {
@@ -505,11 +573,12 @@ export class ReplayEngine {
         sideEffects: [],
         totalCost: 0,
         totalLatency: 0,
-        error: error instanceof Error ? error.message : 'Unknown error'
+        error: error instanceof Error ? error.message : "Unknown error",
       };
     }
   }
 
+  // (Optional legacy helper you can remove if unused)
   private async executeReplayNodes(
     startNodeId: string,
     trace: any,
@@ -523,30 +592,21 @@ export class ReplayEngine {
     let totalLatency = 0;
 
     const nodesToReplay = this.getNodesFromPoint(startNodeId, trace);
-    
+
     for (const node of nodesToReplay) {
       try {
-        // Check if node should be skipped due to side effects
         const nodeEffects = sideEffects.filter(e => e.nodeId === node.id);
         const hasCriticalEffects = nodeEffects.some(e => e.severity === 'critical' && !e.reversible);
-        
+
         if (hasCriticalEffects && !options.mockExternalCalls) {
           skippedNodes.push(node.id);
           continue;
         }
 
-        // Apply modifications
-        const modifiedNode = this.applyModifications(node, modifications);
-        
-        // Execute node (simulated)
-        const executionResult = await this.simulateNodeExecution(modifiedNode, nodeEffects);
-        
+        // Legacy simulated path
         executedNodes.push(node.id);
-        totalCost += executionResult.cost || 0;
-        totalLatency += executionResult.latency || 0;
-        
-      } catch (error) {
-        console.error(`Failed to execute node ${node.id}:`, error);
+        totalLatency += 0;
+      } catch (_error) {
         skippedNodes.push(node.id);
       }
     }
@@ -560,54 +620,6 @@ export class ReplayEngine {
       totalLatency,
       newTraceId: `replay-${Date.now()}`
     };
-  }
-
-  private applyModifications(node: TraceNode, modifications: ReplayModifications): TraceNode {
-    const modifiedNode = { ...node };
-    
-    // Safety check for node.data
-    if (!modifiedNode.data) {
-      return modifiedNode;
-    }
-    
-    // Apply prompt changes
-    if (modifications.promptChanges?.has(node.id)) {
-      modifiedNode.data.prompt = modifications.promptChanges.get(node.id);
-    }
-    
-    // Apply tool response overrides
-    if (modifications.toolResponseOverrides?.has(node.id)) {
-      modifiedNode.data.response = modifications.toolResponseOverrides.get(node.id);
-    }
-    
-    // Apply model changes
-    if (modifications.modelChanges?.has(node.id)) {
-      modifiedNode.data.model = modifications.modelChanges.get(node.id);
-    }
-    
-    return modifiedNode;
-  }
-
-  private async simulateNodeExecution(node: TraceNode, sideEffects: SideEffect[]): Promise<{
-    cost: number;
-    latency: number;
-  }> {
-    // Simulate execution time
-    const latency = Math.random() * 1000 + 100; // 100-1100ms
-    
-    // Calculate cost based on node type and modifications
-    let cost = node.data?.cost || 0;
-    
-    // If there are side effects, use mock responses
-    if (sideEffects.length > 0) {
-      const mockResponse = this.mockManager.getMockResponse(node.id);
-      if (mockResponse) {
-        // Mock execution is typically faster and cheaper
-        cost *= 0.1; // 10% of original cost
-      }
-    }
-    
-    return { cost, latency };
   }
 
   cleanup(): void {

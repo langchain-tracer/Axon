@@ -1,28 +1,17 @@
-import React, { useState, useEffect } from 'react';
-import { 
-  Play, 
-  Pause, 
-  RotateCcw, 
-  Settings, 
-  AlertTriangle, 
-  CheckCircle, 
-  XCircle,
-  Edit3,
-  Zap,
-  Shield,
-  Clock,
-  DollarSign,
-  Eye,
-  EyeOff
+import React, { useState, useEffect, useMemo } from 'react';
+import {
+  Play, Pause, RotateCcw, Settings, AlertTriangle, CheckCircle, XCircle,
+  Edit3, Zap, Shield, Clock, DollarSign, Eye, EyeOff
 } from 'lucide-react';
-import { 
-  ReplayEngine, 
-  ReplayModifications, 
-  ReplayOptions, 
-  ReplayMode, 
+import {
+  ReplayEngine,
+  ReplayModifications,
+  ReplayOptions,
+  ReplayMode,
   SideEffect,
-  StateSnapshot 
 } from '../utils/ReplayEngine';
+import { useReplay } from '../hooks';
+import { createBackendLLMCaller } from "../utils/createLLMCaller";
 
 interface ReplayInterfaceProps {
   selectedNode: any;
@@ -35,28 +24,45 @@ const ReplayInterface: React.FC<ReplayInterfaceProps> = ({
   selectedNode,
   trace,
   onReplayComplete,
-  onClose
+  onClose,
 }) => {
-  const [replayEngine] = useState(() => new ReplayEngine());
+  // Create the engine once for the component’s lifetime
+  const replayEngine = useMemo(() => new ReplayEngine(), []);
+
   const [safetyAnalysis, setSafetyAnalysis] = useState<any>(null);
   const [modifications, setModifications] = useState<ReplayModifications>({
     promptChanges: new Map(),
     toolResponseOverrides: new Map(),
     systemInstructionUpdates: new Map(),
     contextVariableChanges: new Map(),
-    modelChanges: new Map()
+    modelChanges: new Map(),
   });
   const [options, setOptions] = useState<ReplayOptions>({
     mode: ReplayMode.SAFE,
     mockExternalCalls: true,
     useOriginalData: true,
     confirmEachSideEffect: false,
-    maxReplayDepth: 10
+    maxReplayDepth: 10,
+    // live options are optional; leave undefined by default
   });
-  const [isReplaying, setIsReplaying] = useState(false);
-  const [replayResult, setReplayResult] = useState<any>(null);
   const [activeTab, setActiveTab] = useState<'modifications' | 'options' | 'analysis'>('analysis');
   const [expandedSideEffects, setExpandedSideEffects] = useState<Set<string>>(new Set());
+
+  // LLM caller for Live Mode
+  const llm = useMemo(() => createBackendLLMCaller("/api/llm"), []);
+
+  // Hook: run replays locally via ReplayEngine (and optionally Live Mode)
+  const {
+    replayFromNode,
+    replaying: isReplaying,
+    result: replayResult,
+    clearResult,
+  } = useReplay(replayEngine, trace ?? null, {
+    mode: ReplayMode.SAFE,
+    mockExternalCalls: true,
+    useOriginalData: true,
+    llm, // make backend caller available by default
+  });
 
   useEffect(() => {
     if (selectedNode && trace) {
@@ -66,34 +72,37 @@ const ReplayInterface: React.FC<ReplayInterfaceProps> = ({
     }
   }, [selectedNode, trace, replayEngine]);
 
+  useEffect(() => {
+    if (replayResult) onReplayComplete(replayResult);
+  }, [replayResult, onReplayComplete]);
+
   const handleStartReplay = async () => {
     if (!selectedNode || !trace) return;
-    
-    setIsReplaying(true);
-    try {
-      const result = await replayEngine.executeReplay(
-        selectedNode.id,
-        trace,
-        modifications,
-        options
-      );
-      setReplayResult(result);
-      onReplayComplete(result);
-    } catch (error) {
-      console.error('Replay failed:', error);
-    } finally {
-      setIsReplaying(false);
-    }
+
+    await replayFromNode(selectedNode.id, modifications, {
+      mode: options.mode,
+      mockExternalCalls: options.mockExternalCalls,
+      useOriginalData: options.useOriginalData,
+      confirmEachSideEffect: options.confirmEachSideEffect,
+      maxReplayDepth: options.maxReplayDepth,
+      // Live mode knobs:
+      liveMode: options.liveMode,
+      llm,
+      temperature: options.temperature,
+      maxTokens: options.maxTokens,
+    } as Partial<ReplayOptions>);
   };
 
-  const handleModificationChange = (type: keyof ReplayModifications, nodeId: string, value: any) => {
+  const handleModificationChange = (
+    type: keyof ReplayModifications,
+    nodeId: string,
+    value: any
+  ) => {
     setModifications(prev => {
-      const newMods = { ...prev };
-      if (!newMods[type]) {
-        newMods[type] = new Map();
-      }
-      newMods[type].set(nodeId, value);
-      return newMods;
+      const next = { ...prev } as any;
+      if (!next[type]) next[type] = new Map();
+      (next[type] as Map<string, any>).set(nodeId, value);
+      return next;
     });
   };
 
@@ -128,13 +137,9 @@ const ReplayInterface: React.FC<ReplayInterfaceProps> = ({
 
   const toggleSideEffectExpansion = (effectId: string) => {
     setExpandedSideEffects(prev => {
-      const newSet = new Set(prev);
-      if (newSet.has(effectId)) {
-        newSet.delete(effectId);
-      } else {
-        newSet.add(effectId);
-      }
-      return newSet;
+      const s = new Set(prev);
+      s.has(effectId) ? s.delete(effectId) : s.add(effectId);
+      return s;
     });
   };
 
@@ -162,10 +167,7 @@ const ReplayInterface: React.FC<ReplayInterfaceProps> = ({
               {options.mode.toUpperCase()}
             </div>
           </div>
-          <button
-            onClick={onClose}
-            className="text-slate-400 hover:text-white transition-colors"
-          >
+          <button onClick={onClose} className="text-slate-400 hover:text-white transition-colors">
             <XCircle className="w-5 h-5" />
           </button>
         </div>
@@ -254,7 +256,7 @@ const ReplayInterface: React.FC<ReplayInterfaceProps> = ({
                           {expandedSideEffects.has(effect.nodeId) ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                         </div>
                       </button>
-                      
+
                       {expandedSideEffects.has(effect.nodeId) && (
                         <div className="mt-2 pt-2 border-t border-slate-600">
                           <p className="text-sm text-slate-300 mb-2">{effect.description}</p>
@@ -301,22 +303,18 @@ const ReplayInterface: React.FC<ReplayInterfaceProps> = ({
           <div className="space-y-4">
             <div className="bg-slate-700/50 p-4 rounded-lg">
               <h4 className="font-semibold text-white mb-3">Modify Node Behavior</h4>
-              
+
               {/* Prompt Modification */}
               <div className="mb-4">
-                <label className="block text-sm font-medium text-slate-300 mb-2">
-                  Modify Prompt
-                </label>
+                <label className="block text-sm font-medium text-slate-300 mb-2">Modify Prompt</label>
                 <div className="space-y-2">
                   <div className="text-xs text-slate-400">Original:</div>
                   <div className="text-xs text-slate-300 bg-slate-700/50 p-2 rounded border-l-2 border-slate-500 max-h-40 overflow-y-auto">
-                    {selectedNode.prompts && selectedNode.prompts.length > 0 
+                    {selectedNode.prompts && selectedNode.prompts.length > 0
                       ? selectedNode.prompts.map((p: string, i: number) => (
-                          <div key={i} className={i > 0 ? 'mt-2 pt-2 border-t border-slate-600' : ''}>
-                            {p}
-                          </div>
+                          <div key={i} className={i > 0 ? 'mt-2 pt-2 border-t border-slate-600' : ''}>{p}</div>
                         ))
-                      : selectedNode.response 
+                      : selectedNode.response
                         ? `Response: ${selectedNode.response}`
                         : selectedNode.toolInput
                           ? `Tool Input: ${typeof selectedNode.toolInput === 'string' ? selectedNode.toolInput : JSON.stringify(selectedNode.toolInput, null, 2)}`
@@ -324,10 +322,10 @@ const ReplayInterface: React.FC<ReplayInterfaceProps> = ({
                   </div>
                   <div className="text-xs text-slate-400">Modified:</div>
                   <textarea
-                    value={modifications.promptChanges?.get(selectedNode.id) || 
-                           (selectedNode.prompts && selectedNode.prompts.length > 0 ? selectedNode.prompts.join('\n\n') : '') || 
-                           selectedNode.response || 
-                           (typeof selectedNode.toolInput === 'string' ? selectedNode.toolInput : JSON.stringify(selectedNode.toolInput, null, 2)) || 
+                    value={modifications.promptChanges?.get(selectedNode.id) ||
+                           (selectedNode.prompts && selectedNode.prompts.length > 0 ? selectedNode.prompts.join('\n\n') : '') ||
+                           selectedNode.response ||
+                           (typeof selectedNode.toolInput === 'string' ? selectedNode.toolInput : JSON.stringify(selectedNode.toolInput, null, 2)) ||
                            ''}
                     onChange={(e) => handleModificationChange('promptChanges', selectedNode.id, e.target.value)}
                     className="w-full bg-slate-600 border border-slate-500 rounded-md px-3 py-2 text-sm text-white placeholder-slate-400 focus:ring-blue-500 focus:border-blue-500"
@@ -340,28 +338,22 @@ const ReplayInterface: React.FC<ReplayInterfaceProps> = ({
               {/* Tool Response Override */}
               {selectedNode.toolName && (
                 <div className="mb-4">
-                  <label className="block text-sm font-medium text-slate-300 mb-2">
-                    Override Tool Response
-                  </label>
+                  <label className="block text-sm font-medium text-slate-300 mb-2">Override Tool Response</label>
                   <div className="space-y-2">
                     <div className="text-xs text-slate-400">Original Response:</div>
                     <div className="text-xs text-slate-300 bg-slate-700/50 p-2 rounded border-l-2 border-green-500 max-h-40 overflow-y-auto whitespace-pre-wrap">
-                      {selectedNode.toolOutput 
-                        ? (typeof selectedNode.toolOutput === 'string' 
-                            ? selectedNode.toolOutput 
-                            : JSON.stringify(selectedNode.toolOutput, null, 2))
-                        : selectedNode.response 
+                      {selectedNode.toolOutput
+                        ? (typeof selectedNode.toolOutput === 'string' ? selectedNode.toolOutput : JSON.stringify(selectedNode.toolOutput, null, 2))
+                        : selectedNode.response
                           ? selectedNode.response
                           : 'No response available'}
                     </div>
                     <div className="text-xs text-slate-400">Mock Response:</div>
                     <textarea
-                      value={modifications.toolResponseOverrides?.get(selectedNode.id) || 
-                             (selectedNode.toolOutput 
-                               ? (typeof selectedNode.toolOutput === 'string' 
-                                   ? selectedNode.toolOutput 
-                                   : JSON.stringify(selectedNode.toolOutput, null, 2))
-                               : selectedNode.response || '')}
+                      value={modifications.toolResponseOverrides?.get(selectedNode.id) ||
+                              (selectedNode.toolOutput
+                                ? (typeof selectedNode.toolOutput === 'string' ? selectedNode.toolOutput : JSON.stringify(selectedNode.toolOutput, null, 2))
+                                : selectedNode.response || '')}
                       onChange={(e) => handleModificationChange('toolResponseOverrides', selectedNode.id, e.target.value)}
                       className="w-full bg-slate-600 border border-slate-500 rounded-md px-3 py-2 text-sm text-white placeholder-slate-400 focus:ring-blue-500 focus:border-blue-500 font-mono"
                       rows={6}
@@ -373,9 +365,7 @@ const ReplayInterface: React.FC<ReplayInterfaceProps> = ({
 
               {/* Model Change */}
               <div className="mb-4">
-                <label className="block text-sm font-medium text-slate-300 mb-2">
-                  Change Model
-                </label>
+                <label className="block text-sm font-medium text-slate-300 mb-2">Change Model</label>
                 <select
                   value={modifications.modelChanges?.get(selectedNode.id) || selectedNode.model || 'gpt-3.5-turbo'}
                   onChange={(e) => handleModificationChange('modelChanges', selectedNode.id, e.target.value)}
@@ -395,7 +385,7 @@ const ReplayInterface: React.FC<ReplayInterfaceProps> = ({
           <div className="space-y-4">
             <div className="bg-slate-700/50 p-4 rounded-lg">
               <h4 className="font-semibold text-white mb-3">Replay Options</h4>
-              
+
               <div className="space-y-3">
                 <label className="flex items-center gap-3">
                   <input
@@ -428,9 +418,7 @@ const ReplayInterface: React.FC<ReplayInterfaceProps> = ({
                 </label>
 
                 <div>
-                  <label className="block text-sm font-medium text-slate-300 mb-2">
-                    Max Replay Depth
-                  </label>
+                  <label className="block text-sm font-medium text-slate-300 mb-2">Max Replay Depth</label>
                   <input
                     type="number"
                     value={options.maxReplayDepth}
@@ -440,6 +428,39 @@ const ReplayInterface: React.FC<ReplayInterfaceProps> = ({
                     max="50"
                   />
                 </div>
+
+                {/* --- Live Replay Options --- */}
+                <label className="flex items-center gap-3 mt-3">
+                  <input
+                    type="checkbox"
+                    checked={!!options.liveMode}
+                    onChange={(e) => setOptions(prev => ({ ...prev, liveMode: e.target.checked }))}
+                    className="rounded border-slate-500 bg-slate-600 text-blue-500 focus:ring-blue-500"
+                  />
+                  <span className="text-sm text-slate-300">Live mode (re-run changed LLM nodes)</span>
+                </label>
+
+                <div className="grid grid-cols-2 gap-3 mt-2">
+                  <div>
+                    <label className="block text-sm font-medium text-slate-300 mb-1">Temperature</label>
+                    <input
+                      type="number" step="0.1" min="0" max="2"
+                      value={options.temperature ?? 0.7}
+                      onChange={(e) => setOptions(prev => ({ ...prev, temperature: Number(e.target.value) }))}
+                      className="w-full bg-slate-600 border border-slate-500 rounded-md px-3 py-2 text-sm text-white focus:ring-blue-500 focus:border-blue-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-300 mb-1">Max tokens</label>
+                    <input
+                      type="number" min={1} max={8192}
+                      value={options.maxTokens ?? 512}
+                      onChange={(e) => setOptions(prev => ({ ...prev, maxTokens: Number(e.target.value) }))}
+                      className="w-full bg-slate-600 border border-slate-500 rounded-md px-3 py-2 text-sm text-white focus:ring-blue-500 focus:border-blue-500"
+                    />
+                  </div>
+                </div>
+
               </div>
             </div>
           </div>
@@ -459,7 +480,7 @@ const ReplayInterface: React.FC<ReplayInterfaceProps> = ({
               </>
             )}
           </div>
-          
+
           <div className="flex items-center gap-2">
             <button
               onClick={onClose}
