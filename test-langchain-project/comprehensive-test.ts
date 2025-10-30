@@ -159,7 +159,7 @@ async function runTest() {
     console.log("🎉 All tests completed!");
     console.log("=".repeat(80));
     console.log("\n📊 View your traces at: http://localhost:5173");
-    console.log("💡 Each test created a trace showing:");
+    console.log(" Each test created a trace showing:");
     console.log("   1. Chain nodes (overall task)");
     console.log("   2. LLM nodes (AI decisions)");
     console.log("   3. Tool nodes (function executions)");
