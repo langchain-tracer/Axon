@@ -1,7 +1,749 @@
+// import React, { useState, useEffect, useMemo } from 'react';
+// import {
+//   Play,
+//   Pause,
+//   RotateCcw,
+//   Settings,
+//   AlertTriangle,
+//   CheckCircle,
+//   XCircle,
+//   Edit3,
+//   Zap,
+//   Shield,
+//   Clock,
+//   DollarSign,
+//   Eye,
+//   EyeOff,
+// } from 'lucide-react';
+// import {
+//   ReplayEngine,
+//   ReplayModifications,
+//   ReplayOptions,
+//   ReplayMode,
+//   SideEffect,
+// } from '../utils/ReplayEngine';
+// import { useReplay } from '../hooks';
+// import createSocketLLMCaller from '../utils/createLLMCaller';
+
+// interface ReplayInterfaceProps {
+//   selectedNode: any;
+//   trace: any;
+//   onReplayComplete: (result: any) => void;
+//   onClose: () => void;
+// }
+
+// export default function ReplayInterface({
+//   selectedNode,
+//   trace,
+//   onReplayComplete,
+//   onClose,
+// }: ReplayInterfaceProps) {
+//   // ---- engine + state -------------------------------------------------------
+//   const replayEngine = useMemo(() => new ReplayEngine(), []);
+
+//   const [safetyAnalysis, setSafetyAnalysis] = useState<any>(null);
+//   const [modifications, setModifications] = useState<ReplayModifications>({
+//     promptChanges: new Map(),
+//     toolResponseOverrides: new Map(),
+//     systemInstructionUpdates: new Map(),
+//     contextVariableChanges: new Map(),
+//     modelChanges: new Map(),
+//   });
+
+//   const [options, setOptions] = useState<ReplayOptions>({
+//     mode: ReplayMode.SAFE,
+//     mockExternalCalls: true,
+//     useOriginalData: true,
+//     confirmEachSideEffect: false,
+//     maxReplayDepth: 10,
+//   });
+
+//   const [activeTab, setActiveTab] = useState<
+//     'modifications' | 'options' | 'analysis'
+//   >('analysis');
+//   const [expandedSideEffects, setExpandedSideEffects] = useState<Set<string>>(
+//     new Set()
+//   );
+
+//   // LLM caller for Live Mode
+//   const llm = useMemo(() => createSocketLLMCaller(), []);
+
+//   // Hook: run replays locally via ReplayEngine (and optionally Live Mode)
+//   const {
+//     send: replayFromNode,
+//     loading: isReplaying,
+//     output: replayResult,
+//   } = useReplay();
+
+//   useEffect(() => {
+//     if (selectedNode && trace) {
+//       const analysis = replayEngine.analyzeReplaySafety(selectedNode.id, trace);
+//       setSafetyAnalysis(analysis);
+//       setOptions((prev) => ({ ...prev, mode: analysis.mode }));
+//     }
+//   }, [selectedNode, trace, replayEngine]);
+
+//   useEffect(() => {
+//     if (replayResult) onReplayComplete(replayResult);
+//   }, [replayResult, onReplayComplete]);
+
+//   const handleStartReplay = async () => {
+//     if (!selectedNode || !trace) return;
+
+//     // resolve llm caller if live mode is enabled
+//     let resolvedLlm: any = undefined;
+//     if (options.liveMode) {
+//       try {
+//         resolvedLlm = await llm;
+//       } catch (e) {
+//         // If LLM initialization fails, proceed without live LLM
+//         resolvedLlm = undefined;
+//       }
+//     }
+
+//     const payload = {
+//       modifications,
+//       mode: options.mode,
+//       mockExternalCalls: options.mockExternalCalls,
+//       useOriginalData: options.useOriginalData,
+//       confirmEachSideEffect: options.confirmEachSideEffect,
+//       maxReplayDepth: options.maxReplayDepth,
+//       // Live mode knobs:
+//       liveMode: options.liveMode,
+//       llm: resolvedLlm,
+//       temperature: options.temperature,
+//       maxTokens: options.maxTokens,
+//     } as unknown as Partial<ReplayOptions>;
+
+//     // cast payload to any to satisfy the replayFromNode signature which expects a different options shape
+//     await replayFromNode(selectedNode.id, payload as any);
+//   };
+
+//   const handleModificationChange = (
+//     type: keyof ReplayModifications,
+//     nodeId: string,
+//     value: any
+//   ) => {
+//     setModifications((prev) => {
+//       const next = { ...prev } as any;
+//       if (!next[type]) next[type] = new Map();
+//       (next[type] as Map<string, any>).set(nodeId, value);
+//       return next;
+//     });
+//   };
+
+//   const getModeColor = (mode: ReplayMode) => {
+//     switch (mode) {
+//       case ReplayMode.SAFE:
+//         return 'text-green-400 bg-green-500/20 border-green-500';
+//       case ReplayMode.SIMULATION:
+//         return 'text-blue-400 bg-blue-500/20 border-blue-500';
+//       case ReplayMode.WARNING:
+//         return 'text-yellow-400 bg-yellow-500/20 border-yellow-500';
+//       case ReplayMode.BLOCKED:
+//         return 'text-red-400 bg-red-500/20 border-red-500';
+//       default:
+//         return 'text-slate-400 bg-slate-500/20 border-slate-500';
+//     }
+//   };
+
+//   const getModeIcon = (mode: ReplayMode) => {
+//     switch (mode) {
+//       case ReplayMode.SAFE:
+//         return <CheckCircle className='w-4 h-4' />;
+//       case ReplayMode.SIMULATION:
+//         return <Zap className='w-4 h-4' />;
+//       case ReplayMode.WARNING:
+//         return <AlertTriangle className='w-4 h-4' />;
+//       case ReplayMode.BLOCKED:
+//         return <XCircle className='w-4 h-4' />;
+//       default:
+//         return <Shield className='w-4 h-4' />;
+//     }
+//   };
+
+//   const getSeverityColor = (severity: string) => {
+//     switch (severity) {
+//       case 'critical':
+//         return 'text-red-400 bg-red-500/20 border-red-500';
+//       case 'warning':
+//         return 'text-yellow-400 bg-yellow-500/20 border-yellow-500';
+//       case 'safe':
+//         return 'text-green-400 bg-green-500/20 border-green-500';
+//       default:
+//         return 'text-slate-400 bg-slate-500/20 border-slate-500';
+//     }
+//   };
+
+//   const toggleSideEffectExpansion = (effectId: string) => {
+//     setExpandedSideEffects((prev) => {
+//       const s = new Set(prev);
+//       s.has(effectId) ? s.delete(effectId) : s.add(effectId);
+//       return s;
+//     });
+//   };
+
+//   // ---- early guard UI (INSIDE the function) --------------------------------
+//   if (!selectedNode || !trace) {
+//     return (
+//       <div className='bg-slate-800 border border-slate-700 rounded-lg p-6'>
+//         <div className='text-center text-slate-400'>
+//           <Play className='w-12 h-12 mx-auto mb-4' />
+//           <p>Select a node to start replay</p>
+//         </div>
+//       </div>
+//     );
+//   }
+
+//   // ---- main UI --------------------------------------------------------------
+//   return (
+//     <div className='bg-slate-800 border border-slate-700 rounded-lg overflow-hidden'>
+//       {/* Header */}
+//       <div className='p-4 border-b border-slate-700'>
+//         <div className='flex items-center justify-between'>
+//           <div className='flex items-center gap-3'>
+//             <Play className='w-5 h-5 text-blue-400' />
+//             <h3 className='text-lg font-semibold text-white'>
+//               Replay & Experimentation
+//             </h3>
+//             <div
+//               className={`px-2 py-1 rounded text-xs border flex items-center gap-1 ${getModeColor(
+//                 options.mode
+//               )}`}
+//             >
+//               {getModeIcon(options.mode)}
+//               {options.mode.toUpperCase()}
+//             </div>
+//           </div>
+//           <button
+//             onClick={onClose}
+//             className='text-slate-400 hover:text-white transition-colors'
+//           >
+//             <XCircle className='w-5 h-5' />
+//           </button>
+//         </div>
+//         <p className='text-sm text-slate-400 mt-1'>
+//           Replay from:{' '}
+//           <span className='text-white font-medium'>{selectedNode.label}</span>
+//         </p>
+//       </div>
+
+//       {/* Tabs */}
+//       <div className='flex border-b border-slate-700'>
+//         {[
+//           { id: 'analysis', label: 'Safety Analysis', icon: Shield },
+//           { id: 'modifications', label: 'Modifications', icon: Edit3 },
+//           { id: 'options', label: 'Options', icon: Settings },
+//         ].map((tab) => (
+//           <button
+//             key={tab.id}
+//             onClick={() => setActiveTab(tab.id as any)}
+//             className={`flex items-center gap-2 px-4 py-3 text-sm font-medium transition-colors ${
+//               activeTab === tab.id
+//                 ? 'text-blue-400 border-b-2 border-blue-400 bg-slate-700/50'
+//                 : 'text-slate-400 hover:text-white hover:bg-slate-700/30'
+//             }`}
+//           >
+//             <tab.icon className='w-4 h-4' />
+//             {tab.label}
+//           </button>
+//         ))}
+//       </div>
+
+//       {/* Content */}
+//       <div className='p-4 max-h-96 overflow-auto'>
+//         {activeTab === 'analysis' && safetyAnalysis && (
+//           <div className='space-y-4'>
+//             {/* Mode Summary */}
+//             <div className='bg-slate-700/50 p-4 rounded-lg'>
+//               <h4 className='font-semibold text-white mb-2'>
+//                 Replay Safety Analysis
+//               </h4>
+//               <div className='grid grid-cols-2 gap-4'>
+//                 <div>
+//                   <div className='text-sm text-slate-400'>Mode</div>
+//                   <div
+//                     className={`inline-flex items-center gap-1 px-2 py-1 rounded text-xs border ${getModeColor(
+//                       safetyAnalysis.mode
+//                     )}`}
+//                   >
+//                     {getModeIcon(safetyAnalysis.mode)}
+//                     {safetyAnalysis.mode}
+//                   </div>
+//                 </div>
+//                 <div>
+//                   <div className='text-sm text-slate-400'>Side Effects</div>
+//                   <div className='text-white font-medium'>
+//                     {safetyAnalysis.sideEffects.length}
+//                   </div>
+//                 </div>
+//               </div>
+//             </div>
+
+//             {/* Warnings */}
+//             {safetyAnalysis.warnings.length > 0 && (
+//               <div className='bg-yellow-500/10 border border-yellow-500/20 p-4 rounded-lg'>
+//                 <h4 className='font-semibold text-yellow-400 mb-2 flex items-center gap-2'>
+//                   <AlertTriangle className='w-4 h-4' />
+//                   Warnings
+//                 </h4>
+//                 <ul className='space-y-1'>
+//                   {safetyAnalysis.warnings.map(
+//                     (warning: string, index: number) => (
+//                       <li key={index} className='text-sm text-yellow-300'>
+//                         {warning}
+//                       </li>
+//                     )
+//                   )}
+//                 </ul>
+//               </div>
+//             )}
+
+//             {/* Side Effects */}
+//             {safetyAnalysis.sideEffects.length > 0 && (
+//               <div>
+//                 <h4 className='font-semibold text-white mb-2'>
+//                   Detected Side Effects
+//                 </h4>
+//                 <div className='space-y-2'>
+//                   {safetyAnalysis.sideEffects.map(
+//                     (effect: SideEffect, index: number) => (
+//                       <div
+//                         key={index}
+//                         className='bg-slate-700/50 p-3 rounded-lg'
+//                       >
+//                         <button
+//                           onClick={() =>
+//                             toggleSideEffectExpansion(effect.nodeId)
+//                           }
+//                           className='flex items-center justify-between w-full text-left'
+//                         >
+//                           <div className='flex items-center gap-2'>
+//                             <div
+//                               className={`px-2 py-1 rounded text-xs border ${getSeverityColor(
+//                                 effect.severity
+//                               )}`}
+//                             >
+//                               {effect.severity}
+//                             </div>
+//                             <span className='text-white font-medium'>
+//                               {effect.type}
+//                             </span>
+//                           </div>
+//                           <div className='text-slate-400'>
+//                             {expandedSideEffects.has(effect.nodeId) ? (
+//                               <EyeOff className='w-4 h-4' />
+//                             ) : (
+//                               <Eye className='w-4 h-4' />
+//                             )}
+//                           </div>
+//                         </button>
+
+//                         {expandedSideEffects.has(effect.nodeId) && (
+//                           <div className='mt-2 pt-2 border-t border-slate-600'>
+//                             <p className='text-sm text-slate-300 mb-2'>
+//                               {effect.description}
+//                             </p>
+//                             <div className='grid grid-cols-2 gap-2 text-xs'>
+//                               <div>
+//                                 <span className='text-slate-400'>
+//                                   Reversible:
+//                                 </span>
+//                                 <span
+//                                   className={`ml-1 ${
+//                                     effect.reversible
+//                                       ? 'text-green-400'
+//                                       : 'text-red-400'
+//                                   }`}
+//                                 >
+//                                   {effect.reversible ? 'Yes' : 'No'}
+//                                 </span>
+//                               </div>
+//                               <div>
+//                                 <span className='text-slate-400'>
+//                                   External:
+//                                 </span>
+//                                 <span
+//                                   className={`ml-1 ${
+//                                     effect.externalDependency
+//                                       ? 'text-yellow-400'
+//                                       : 'text-green-400'
+//                                   }`}
+//                                 >
+//                                   {effect.externalDependency ? 'Yes' : 'No'}
+//                                 </span>
+//                               </div>
+//                             </div>
+//                           </div>
+//                         )}
+//                       </div>
+//                     )
+//                   )}
+//                 </div>
+//               </div>
+//             )}
+
+//             {/* Recommendations */}
+//             {safetyAnalysis.recommendations.length > 0 && (
+//               <div className='bg-blue-500/10 border border-blue-500/20 p-4 rounded-lg'>
+//                 <h4 className='font-semibold text-blue-400 mb-2'>
+//                   Recommendations
+//                 </h4>
+//                 <ul className='space-y-1'>
+//                   {safetyAnalysis.recommendations.map(
+//                     (rec: string, index: number) => (
+//                       <li
+//                         key={index}
+//                         className='text-sm text-blue-300 flex items-start gap-2'
+//                       >
+//                         <span className='text-blue-400 mt-1'>•</span>
+//                         {rec}
+//                       </li>
+//                     )
+//                   )}
+//                 </ul>
+//               </div>
+//             )}
+//           </div>
+//         )}
+
+//         {activeTab === 'modifications' && (
+//           <div className='space-y-4'>
+//             <div className='bg-slate-700/50 p-4 rounded-lg'>
+//               <h4 className='font-semibold text-white mb-3'>
+//                 Modify Node Behavior
+//               </h4>
+
+//               {/* Prompt Modification */}
+//               <div className='mb-4'>
+//                 <label className='block text-sm font-medium text-slate-300 mb-2'>
+//                   Modify Prompt
+//                 </label>
+//                 <div className='space-y-2'>
+//                   <div className='text-xs text-slate-400'>Original:</div>
+//                   <div className='text-xs text-slate-300 bg-slate-700/50 p-2 rounded border-l-2 border-slate-500 max-h-40 overflow-y-auto'>
+//                     {selectedNode.prompts && selectedNode.prompts.length > 0
+//                       ? selectedNode.prompts.map((p: string, i: number) => (
+//                           <div
+//                             key={i}
+//                             className={
+//                               i > 0 ? 'mt-2 pt-2 border-t border-slate-600' : ''
+//                             }
+//                           >
+//                             {p}
+//                           </div>
+//                         ))
+//                       : selectedNode.response
+//                       ? `Response: ${selectedNode.response}`
+//                       : selectedNode.toolInput
+//                       ? `Tool Input: ${
+//                           typeof selectedNode.toolInput === 'string'
+//                             ? selectedNode.toolInput
+//                             : JSON.stringify(selectedNode.toolInput, null, 2)
+//                         }`
+//                       : 'No prompt available'}
+//                   </div>
+//                   <div className='text-xs text-slate-400'>Modified:</div>
+//                   <textarea
+//                     value={
+//                       modifications.promptChanges?.get(selectedNode.id) ||
+//                       (selectedNode.prompts && selectedNode.prompts.length > 0
+//                         ? selectedNode.prompts.join('\n\n')
+//                         : '') ||
+//                       selectedNode.response ||
+//                       (typeof selectedNode.toolInput === 'string'
+//                         ? selectedNode.toolInput
+//                         : JSON.stringify(selectedNode.toolInput, null, 2)) ||
+//                       ''
+//                     }
+//                     onChange={(e) =>
+//                       handleModificationChange(
+//                         'promptChanges',
+//                         selectedNode.id,
+//                         e.target.value
+//                       )
+//                     }
+//                     className='w-full bg-slate-600 border border-slate-500 rounded-md px-3 py-2 text-sm text-white placeholder-slate-400 focus:ring-blue-500 focus:border-blue-500'
+//                     rows={6}
+//                     placeholder='Enter modified prompt...'
+//                   />
+//                 </div>
+//               </div>
+
+//               {/* Tool Response Override */}
+//               {selectedNode.toolName && (
+//                 <div className='mb-4'>
+//                   <label className='block text-sm font-medium text-slate-300 mb-2'>
+//                     Override Tool Response
+//                   </label>
+//                   <div className='space-y-2'>
+//                     <div className='text-xs text-slate-400'>
+//                       Original Response:
+//                     </div>
+//                     <div className='text-xs text-slate-300 bg-slate-700/50 p-2 rounded border-l-2 border-green-500 max-h-40 overflow-y-auto whitespace-pre-wrap'>
+//                       {selectedNode.toolOutput
+//                         ? typeof selectedNode.toolOutput === 'string'
+//                           ? selectedNode.toolOutput
+//                           : JSON.stringify(selectedNode.toolOutput, null, 2)
+//                         : selectedNode.response
+//                         ? selectedNode.response
+//                         : 'No response available'}
+//                     </div>
+//                     <div className='text-xs text-slate-400'>Mock Response:</div>
+//                     <textarea
+//                       value={
+//                         modifications.toolResponseOverrides?.get(
+//                           selectedNode.id
+//                         ) ||
+//                         (selectedNode.toolOutput
+//                           ? typeof selectedNode.toolOutput === 'string'
+//                             ? selectedNode.toolOutput
+//                             : JSON.stringify(selectedNode.toolOutput, null, 2)
+//                           : selectedNode.response || '')
+//                       }
+//                       onChange={(e) =>
+//                         handleModificationChange(
+//                           'toolResponseOverrides',
+//                           selectedNode.id,
+//                           e.target.value
+//                         )
+//                       }
+//                       className='w-full bg-slate-600 border border-slate-500 rounded-md px-3 py-2 text-sm text-white placeholder-slate-400 focus:ring-blue-500 focus:border-blue-500 font-mono'
+//                       rows={6}
+//                       placeholder='Enter mock tool response...'
+//                     />
+//                   </div>
+//                 </div>
+//               )}
+
+//               {/* Model Change */}
+//               <div className='mb-4'>
+//                 <label className='block text-sm font-medium text-slate-300 mb-2'>
+//                   Change Model
+//                 </label>
+//                 <select
+//                   value={
+//                     modifications.modelChanges?.get(selectedNode.id) ||
+//                     selectedNode.model ||
+//                     'gpt-3.5-turbo'
+//                   }
+//                   onChange={(e) =>
+//                     handleModificationChange(
+//                       'modelChanges',
+//                       selectedNode.id,
+//                       e.target.value
+//                     )
+//                   }
+//                   className='w-full bg-slate-600 border border-slate-500 rounded-md px-3 py-2 text-sm text-white focus:ring-blue-500 focus:border-blue-500'
+//                 >
+//                   <option value='gpt-3.5-turbo'>GPT-3.5 Turbo</option>
+//                   <option value='gpt-4'>GPT-4</option>
+//                   <option value='gpt-4-turbo'>GPT-4 Turbo</option>
+//                   <option value='claude-3-sonnet'>Claude 3 Sonnet</option>
+//                 </select>
+//               </div>
+//             </div>
+//           </div>
+//         )}
+
+//         {activeTab === 'options' && (
+//           <div className='space-y-4'>
+//             <div className='bg-slate-700/50 p-4 rounded-lg'>
+//               <h4 className='font-semibold text-white mb-3'>Replay Options</h4>
+
+//               <div className='space-y-3'>
+//                 <label className='flex items-center gap-3'>
+//                   <input
+//                     type='checkbox'
+//                     checked={options.mockExternalCalls}
+//                     onChange={(e) =>
+//                       setOptions((prev) => ({
+//                         ...prev,
+//                         mockExternalCalls: e.target.checked,
+//                       }))
+//                     }
+//                     className='rounded border-slate-500 bg-slate-600 text-blue-500 focus:ring-blue-500'
+//                   />
+//                   <span className='text-sm text-slate-300'>
+//                     Mock external API calls
+//                   </span>
+//                 </label>
+
+//                 <label className='flex items-center gap-3'>
+//                   <input
+//                     type='checkbox'
+//                     checked={options.useOriginalData}
+//                     onChange={(e) =>
+//                       setOptions((prev) => ({
+//                         ...prev,
+//                         useOriginalData: e.target.checked,
+//                       }))
+//                     }
+//                     className='rounded border-slate-500 bg-slate-600 text-blue-500 focus:ring-blue-500'
+//                   />
+//                   <span className='text-sm text-slate-300'>
+//                     Use original data for time-dependent operations
+//                   </span>
+//                 </label>
+
+//                 <label className='flex items-center gap-3'>
+//                   <input
+//                     type='checkbox'
+//                     checked={options.confirmEachSideEffect}
+//                     onChange={(e) =>
+//                       setOptions((prev) => ({
+//                         ...prev,
+//                         confirmEachSideEffect: e.target.checked,
+//                       }))
+//                     }
+//                     className='rounded border-slate-500 bg-slate-600 text-blue-500 focus:ring-blue-500'
+//                   />
+//                   <span className='text-sm text-slate-300'>
+//                     Confirm each side effect individually
+//                   </span>
+//                 </label>
+
+//                 <div>
+//                   <label className='block text-sm font-medium text-slate-300 mb-2'>
+//                     Max Replay Depth
+//                   </label>
+//                   <input
+//                     type='number'
+//                     value={options.maxReplayDepth}
+//                     onChange={(e) =>
+//                       setOptions((prev) => ({
+//                         ...prev,
+//                         maxReplayDepth: parseInt(e.target.value),
+//                       }))
+//                     }
+//                     className='w-full bg-slate-600 border border-slate-500 rounded-md px-3 py-2 text-sm text-white focus:ring-blue-500 focus:border-blue-500'
+//                     min='1'
+//                     max='50'
+//                   />
+//                 </div>
+
+//                 {/* --- Live Replay Options --- */}
+//                 <label className='flex items-center gap-3 mt-3'>
+//                   <input
+//                     type='checkbox'
+//                     checked={!!options.liveMode}
+//                     onChange={(e) =>
+//                       setOptions((prev) => ({
+//                         ...prev,
+//                         liveMode: e.target.checked,
+//                       }))
+//                     }
+//                     className='rounded border-slate-500 bg-slate-600 text-blue-500 focus:ring-blue-500'
+//                   />
+//                   <span className='text-sm text-slate-300'>
+//                     Live mode (re-run changed LLM nodes)
+//                   </span>
+//                 </label>
+
+//                 <div className='grid grid-cols-2 gap-3 mt-2'>
+//                   <div>
+//                     <label className='block text-sm font-medium text-slate-300 mb-1'>
+//                       Temperature
+//                     </label>
+//                     <input
+//                       type='number'
+//                       step='0.1'
+//                       min='0'
+//                       max='2'
+//                       value={options.temperature ?? 0.7}
+//                       onChange={(e) =>
+//                         setOptions((prev) => ({
+//                           ...prev,
+//                           temperature: Number(e.target.value),
+//                         }))
+//                       }
+//                       className='w-full bg-slate-600 border border-slate-500 rounded-md px-3 py-2 text-sm text-white focus:ring-blue-500 focus:border-blue-500'
+//                     />
+//                   </div>
+//                   <div>
+//                     <label className='block text-sm font-medium text-slate-300 mb-1'>
+//                       Max tokens
+//                     </label>
+//                     <input
+//                       type='number'
+//                       min={1}
+//                       max={8192}
+//                       value={options.maxTokens ?? 512}
+//                       onChange={(e) =>
+//                         setOptions((prev) => ({
+//                           ...prev,
+//                           maxTokens: Number(e.target.value),
+//                         }))
+//                       }
+//                       className='w-full bg-slate-600 border border-slate-500 rounded-md px-3 py-2 text-sm text-white focus:ring-blue-500 focus:border-blue-500'
+//                     />
+//                   </div>
+//                 </div>
+//               </div>
+//             </div>
+//           </div>
+//         )}
+//       </div>
+
+//       {/* Footer */}
+//       <div className='p-4 border-t border-slate-700 bg-slate-700/30'>
+//         <div className='flex items-center justify-between'>
+//           <div className='text-sm text-slate-400'>
+//             {safetyAnalysis && (
+//               <>
+//                 {safetyAnalysis.sideEffects.length} side effects detected
+//                 {safetyAnalysis.mode === ReplayMode.BLOCKED && (
+//                   <span className='text-red-400 ml-2'>• Replay blocked</span>
+//                 )}
+//               </>
+//             )}
+//           </div>
+
+//           <div className='flex items-center gap-2'>
+//             <button
+//               onClick={onClose}
+//               className='px-3 py-2 text-sm text-slate-400 hover:text-white transition-colors'
+//             >
+//               Cancel
+//             </button>
+//             <button
+//               onClick={handleStartReplay}
+//               disabled={
+//                 isReplaying || safetyAnalysis?.mode === ReplayMode.BLOCKED
+//               }
+//               className='px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-600 disabled:cursor-not-allowed text-white text-sm font-medium rounded-md transition-colors flex items-center gap-2'
+//             >
+//               {isReplaying ? (
+//                 <>
+//                   <div className='w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin' />
+//                   Replaying...
+//                 </>
+//               ) : (
+//                 <>
+//                   <Play className='w-4 h-4' />
+//                   Start Replay
+//                 </>
+//               )}
+//             </button>
+//           </div>
+//         </div>
+//       </div>
+//     </div>
+//   );
+// }
+
 import React, { useState, useEffect, useMemo } from 'react';
 import {
-  Play, Pause, RotateCcw, Settings, AlertTriangle, CheckCircle, XCircle,
-  Edit3, Zap, Shield, Clock, DollarSign, Eye, EyeOff
+  Play,
+  Settings,
+  AlertTriangle,
+  CheckCircle,
+  XCircle,
+  Edit3,
+  Zap,
+  Shield,
+  Eye,
+  EyeOff,
 } from 'lucide-react';
 import {
   ReplayEngine,
@@ -11,7 +753,7 @@ import {
   SideEffect,
 } from '../utils/ReplayEngine';
 import { useReplay } from '../hooks';
-import { createBackendLLMCaller } from "../utils/createLLMCaller";
+import createSocketLLMCaller from '../utils/createLLMCaller';
 
 interface ReplayInterfaceProps {
   selectedNode: any;
@@ -20,13 +762,18 @@ interface ReplayInterfaceProps {
   onClose: () => void;
 }
 
-const ReplayInterface: React.FC<ReplayInterfaceProps> = ({
+/** minimal safety helpers */
+const asArray = <T,>(v: any): T[] => (Array.isArray(v) ? v : []);
+const num = (v: any, d = 0) =>
+  Number.isFinite(v) ? v : Number.isFinite(Number(v)) ? Number(v) : d;
+
+export default function ReplayInterface({
   selectedNode,
   trace,
   onReplayComplete,
   onClose,
-}) => {
-  // Create the engine once for the component’s lifetime
+}: ReplayInterfaceProps) {
+  // ---- engine + state -------------------------------------------------------
   const replayEngine = useMemo(() => new ReplayEngine(), []);
 
   const [safetyAnalysis, setSafetyAnalysis] = useState<any>(null);
@@ -37,47 +784,91 @@ const ReplayInterface: React.FC<ReplayInterfaceProps> = ({
     contextVariableChanges: new Map(),
     modelChanges: new Map(),
   });
+
   const [options, setOptions] = useState<ReplayOptions>({
     mode: ReplayMode.SAFE,
     mockExternalCalls: true,
     useOriginalData: true,
     confirmEachSideEffect: false,
     maxReplayDepth: 10,
-    // live options are optional; leave undefined by default
   });
-  const [activeTab, setActiveTab] = useState<'modifications' | 'options' | 'analysis'>('analysis');
-  const [expandedSideEffects, setExpandedSideEffects] = useState<Set<string>>(new Set());
+
+  const [activeTab, setActiveTab] = useState<
+    'modifications' | 'options' | 'analysis'
+  >('analysis');
+  const [expandedSideEffects, setExpandedSideEffects] = useState<Set<string>>(
+    new Set()
+  );
 
   // LLM caller for Live Mode
-  const llm = useMemo(() => createBackendLLMCaller("/api/llm"), []);
+  const llm = useMemo(() => createSocketLLMCaller(), []);
 
-  // Hook: run replays locally via ReplayEngine (and optionally Live Mode)
+  // ✅ IMPORTANT: wire the hook to the engine + trace
   const {
-    replayFromNode,
-    replaying: isReplaying,
-    result: replayResult,
-    clearResult,
+    send: replayFromNode,
+    loading: isReplaying,
+    output: replayResult,
   } = useReplay(replayEngine, trace ?? null, {
     mode: ReplayMode.SAFE,
     mockExternalCalls: true,
     useOriginalData: true,
-    llm, // make backend caller available by default
+    // expose live knobs (but off by default)
+    liveMode: false,
+    llm,
   });
 
   useEffect(() => {
     if (selectedNode && trace) {
       const analysis = replayEngine.analyzeReplaySafety(selectedNode.id, trace);
       setSafetyAnalysis(analysis);
-      setOptions(prev => ({ ...prev, mode: analysis.mode }));
+      setOptions((prev) => ({ ...prev, mode: analysis.mode }));
     }
   }, [selectedNode, trace, replayEngine]);
 
+  // Normalize whatever the hook emits and bubble up to parent
   useEffect(() => {
-    if (replayResult) onReplayComplete(replayResult);
+    if (!replayResult) return;
+
+    const normalized =
+      typeof replayResult === 'object'
+        ? {
+            success: !!replayResult.success,
+            newTraceId: replayResult.newTraceId ?? undefined,
+            executedNodes: asArray<string>(replayResult.executedNodes),
+            skippedNodes: asArray<string>(replayResult.skippedNodes),
+            sideEffects: asArray<any>(replayResult.sideEffects),
+            error: replayResult.error ?? undefined,
+            totalCost: num(replayResult.totalCost, 0),
+            totalLatency: num(replayResult.totalLatency, 0),
+          }
+        : {
+            success: true,
+            executedNodes: [],
+            skippedNodes: [],
+            sideEffects: [],
+            totalCost: 0,
+            totalLatency: 0,
+            newTraceId: undefined,
+            error: undefined,
+            // optional message for simple runs
+            message: String(replayResult),
+          };
+
+    onReplayComplete(normalized);
   }, [replayResult, onReplayComplete]);
 
   const handleStartReplay = async () => {
     if (!selectedNode || !trace) return;
+
+    // resolve llm caller if live mode is enabled
+    let resolvedLlm: any = undefined;
+    if (options.liveMode) {
+      try {
+        resolvedLlm = await llm;
+      } catch {
+        resolvedLlm = undefined;
+      }
+    }
 
     await replayFromNode(selectedNode.id, modifications, {
       mode: options.mode,
@@ -87,7 +878,7 @@ const ReplayInterface: React.FC<ReplayInterfaceProps> = ({
       maxReplayDepth: options.maxReplayDepth,
       // Live mode knobs:
       liveMode: options.liveMode,
-      llm,
+      llm: resolvedLlm,
       temperature: options.temperature,
       maxTokens: options.maxTokens,
     } as Partial<ReplayOptions>);
@@ -98,7 +889,7 @@ const ReplayInterface: React.FC<ReplayInterfaceProps> = ({
     nodeId: string,
     value: any
   ) => {
-    setModifications(prev => {
+    setModifications((prev) => {
       const next = { ...prev } as any;
       if (!next[type]) next[type] = new Map();
       (next[type] as Map<string, any>).set(nodeId, value);
@@ -108,81 +899,107 @@ const ReplayInterface: React.FC<ReplayInterfaceProps> = ({
 
   const getModeColor = (mode: ReplayMode) => {
     switch (mode) {
-      case ReplayMode.SAFE: return 'text-green-400 bg-green-500/20 border-green-500';
-      case ReplayMode.SIMULATION: return 'text-blue-400 bg-blue-500/20 border-blue-500';
-      case ReplayMode.WARNING: return 'text-yellow-400 bg-yellow-500/20 border-yellow-500';
-      case ReplayMode.BLOCKED: return 'text-red-400 bg-red-500/20 border-red-500';
-      default: return 'text-slate-400 bg-slate-500/20 border-slate-500';
+      case ReplayMode.SAFE:
+        return 'text-green-400 bg-green-500/20 border-green-500';
+      case ReplayMode.SIMULATION:
+        return 'text-blue-400 bg-blue-500/20 border-blue-500';
+      case ReplayMode.WARNING:
+        return 'text-yellow-400 bg-yellow-500/20 border-yellow-500';
+      case ReplayMode.BLOCKED:
+        return 'text-red-400 bg-red-500/20 border-red-500';
+      default:
+        return 'text-slate-400 bg-slate-500/20 border-slate-500';
     }
   };
 
   const getModeIcon = (mode: ReplayMode) => {
     switch (mode) {
-      case ReplayMode.SAFE: return <CheckCircle className="w-4 h-4" />;
-      case ReplayMode.SIMULATION: return <Zap className="w-4 h-4" />;
-      case ReplayMode.WARNING: return <AlertTriangle className="w-4 h-4" />;
-      case ReplayMode.BLOCKED: return <XCircle className="w-4 h-4" />;
-      default: return <Shield className="w-4 h-4" />;
+      case ReplayMode.SAFE:
+        return <CheckCircle className='w-4 h-4' />;
+      case ReplayMode.SIMULATION:
+        return <Zap className='w-4 h-4' />;
+      case ReplayMode.WARNING:
+        return <AlertTriangle className='w-4 h-4' />;
+      case ReplayMode.BLOCKED:
+        return <XCircle className='w-4 h-4' />;
+      default:
+        return <Shield className='w-4 h-4' />;
     }
   };
 
   const getSeverityColor = (severity: string) => {
     switch (severity) {
-      case 'critical': return 'text-red-400 bg-red-500/20 border-red-500';
-      case 'warning': return 'text-yellow-400 bg-yellow-500/20 border-yellow-500';
-      case 'safe': return 'text-green-400 bg-green-500/20 border-green-500';
-      default: return 'text-slate-400 bg-slate-500/20 border-slate-500';
+      case 'critical':
+        return 'text-red-400 bg-red-500/20 border-red-500';
+      case 'warning':
+        return 'text-yellow-400 bg-yellow-500/20 border-yellow-500';
+      case 'safe':
+        return 'text-green-400 bg-green-500/20 border-green-500';
+      default:
+        return 'text-slate-400 bg-slate-500/20 border-slate-500';
     }
   };
 
   const toggleSideEffectExpansion = (effectId: string) => {
-    setExpandedSideEffects(prev => {
+    setExpandedSideEffects((prev) => {
       const s = new Set(prev);
       s.has(effectId) ? s.delete(effectId) : s.add(effectId);
       return s;
     });
   };
 
+  // ---- early guard UI -------------------------------------------------------
   if (!selectedNode || !trace) {
     return (
-      <div className="bg-slate-800 border border-slate-700 rounded-lg p-6">
-        <div className="text-center text-slate-400">
-          <Play className="w-12 h-12 mx-auto mb-4" />
+      <div className='bg-slate-800 border border-slate-700 rounded-lg p-6'>
+        <div className='text-center text-slate-400'>
+          <Play className='w-12 h-12 mx-auto mb-4' />
           <p>Select a node to start replay</p>
         </div>
       </div>
     );
   }
 
+  // ---- main UI --------------------------------------------------------------
   return (
-    <div className="bg-slate-800 border border-slate-700 rounded-lg overflow-hidden">
+    <div className='bg-slate-800 border border-slate-700 rounded-lg overflow-hidden'>
       {/* Header */}
-      <div className="p-4 border-b border-slate-700">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <Play className="w-5 h-5 text-blue-400" />
-            <h3 className="text-lg font-semibold text-white">Replay & Experimentation</h3>
-            <div className={`px-2 py-1 rounded text-xs border flex items-center gap-1 ${getModeColor(options.mode)}`}>
+      <div className='p-4 border-b border-slate-700'>
+        <div className='flex items-center justify-between'>
+          <div className='flex items-center gap-3'>
+            <Play className='w-5 h-5 text-blue-400' />
+            <h3 className='text-lg font-semibold text-white'>
+              Replay & Experimentation
+            </h3>
+            <div
+              className={`px-2 py-1 rounded text-xs border flex items-center gap-1 ${getModeColor(
+                options.mode
+              )}`}
+            >
               {getModeIcon(options.mode)}
               {options.mode.toUpperCase()}
             </div>
           </div>
-          <button onClick={onClose} className="text-slate-400 hover:text-white transition-colors">
-            <XCircle className="w-5 h-5" />
+          <button
+            onClick={onClose}
+            className='text-slate-400 hover:text-white transition-colors'
+          >
+            <XCircle className='w-5 h-5' />
           </button>
         </div>
-        <p className="text-sm text-slate-400 mt-1">
-          Replay from: <span className="text-white font-medium">{selectedNode.label}</span>
+        <p className='text-sm text-slate-400 mt-1'>
+          Replay from:{' '}
+          <span className='text-white font-medium'>{selectedNode.label}</span>
         </p>
       </div>
 
       {/* Tabs */}
-      <div className="flex border-b border-slate-700">
+      <div className='flex border-b border-slate-700'>
         {[
           { id: 'analysis', label: 'Safety Analysis', icon: Shield },
           { id: 'modifications', label: 'Modifications', icon: Edit3 },
-          { id: 'options', label: 'Options', icon: Settings }
-        ].map(tab => (
+          { id: 'options', label: 'Options', icon: Settings },
+        ].map((tab) => (
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id as any)}
@@ -192,45 +1009,57 @@ const ReplayInterface: React.FC<ReplayInterfaceProps> = ({
                 : 'text-slate-400 hover:text-white hover:bg-slate-700/30'
             }`}
           >
-            <tab.icon className="w-4 h-4" />
+            <tab.icon className='w-4 h-4' />
             {tab.label}
           </button>
         ))}
       </div>
 
       {/* Content */}
-      <div className="p-4 max-h-96 overflow-auto">
+      <div className='p-4 max-h-96 overflow-auto'>
         {activeTab === 'analysis' && safetyAnalysis && (
-          <div className="space-y-4">
+          <div className='space-y-4'>
             {/* Mode Summary */}
-            <div className="bg-slate-700/50 p-4 rounded-lg">
-              <h4 className="font-semibold text-white mb-2">Replay Safety Analysis</h4>
-              <div className="grid grid-cols-2 gap-4">
+            <div className='bg-slate-700/50 p-4 rounded-lg'>
+              <h4 className='font-semibold text-white mb-2'>
+                Replay Safety Analysis
+              </h4>
+              <div className='grid grid-cols-2 gap-4'>
                 <div>
-                  <div className="text-sm text-slate-400">Mode</div>
-                  <div className={`inline-flex items-center gap-1 px-2 py-1 rounded text-xs border ${getModeColor(safetyAnalysis.mode)}`}>
+                  <div className='text-sm text-slate-400'>Mode</div>
+                  <div
+                    className={`inline-flex items-center gap-1 px-2 py-1 rounded text-xs border ${getModeColor(
+                      safetyAnalysis.mode
+                    )}`}
+                  >
                     {getModeIcon(safetyAnalysis.mode)}
                     {safetyAnalysis.mode}
                   </div>
                 </div>
                 <div>
-                  <div className="text-sm text-slate-400">Side Effects</div>
-                  <div className="text-white font-medium">{safetyAnalysis.sideEffects.length}</div>
+                  <div className='text-sm text-slate-400'>Side Effects</div>
+                  <div className='text-white font-medium'>
+                    {safetyAnalysis.sideEffects.length}
+                  </div>
                 </div>
               </div>
             </div>
 
             {/* Warnings */}
             {safetyAnalysis.warnings.length > 0 && (
-              <div className="bg-yellow-500/10 border border-yellow-500/20 p-4 rounded-lg">
-                <h4 className="font-semibold text-yellow-400 mb-2 flex items-center gap-2">
-                  <AlertTriangle className="w-4 h-4" />
+              <div className='bg-yellow-500/10 border border-yellow-500/20 p-4 rounded-lg'>
+                <h4 className='font-semibold text-yellow-400 mb-2 flex items-center gap-2'>
+                  <AlertTriangle className='w-4 h-4' />
                   Warnings
                 </h4>
-                <ul className="space-y-1">
-                  {safetyAnalysis.warnings.map((warning: string, index: number) => (
-                    <li key={index} className="text-sm text-yellow-300">{warning}</li>
-                  ))}
+                <ul className='space-y-1'>
+                  {safetyAnalysis.warnings.map(
+                    (warning: string, index: number) => (
+                      <li key={index} className='text-sm text-yellow-300'>
+                        {warning}
+                      </li>
+                    )
+                  )}
                 </ul>
               </div>
             )}
@@ -238,61 +1067,109 @@ const ReplayInterface: React.FC<ReplayInterfaceProps> = ({
             {/* Side Effects */}
             {safetyAnalysis.sideEffects.length > 0 && (
               <div>
-                <h4 className="font-semibold text-white mb-2">Detected Side Effects</h4>
-                <div className="space-y-2">
-                  {safetyAnalysis.sideEffects.map((effect: SideEffect, index: number) => (
-                    <div key={index} className="bg-slate-700/50 p-3 rounded-lg">
-                      <button
-                        onClick={() => toggleSideEffectExpansion(effect.nodeId)}
-                        className="flex items-center justify-between w-full text-left"
+                <h4 className='font-semibold text-white mb-2'>
+                  Detected Side Effects
+                </h4>
+                <div className='space-y-2'>
+                  {safetyAnalysis.sideEffects.map(
+                    (effect: SideEffect, index: number) => (
+                      <div
+                        key={index}
+                        className='bg-slate-700/50 p-3 rounded-lg'
                       >
-                        <div className="flex items-center gap-2">
-                          <div className={`px-2 py-1 rounded text-xs border ${getSeverityColor(effect.severity)}`}>
-                            {effect.severity}
+                        <button
+                          onClick={() =>
+                            toggleSideEffectExpansion(effect.nodeId)
+                          }
+                          className='flex items-center justify-between w-full text-left'
+                        >
+                          <div className='flex items-center gap-2'>
+                            <div
+                              className={`px-2 py-1 rounded text-xs border ${
+                                effect.severity === 'critical'
+                                  ? 'text-red-400 bg-red-500/20 border-red-500'
+                                  : effect.severity === 'warning'
+                                  ? 'text-yellow-400 bg-yellow-500/20 border-yellow-500'
+                                  : 'text-green-400 bg-green-500/20 border-green-500'
+                              }`}
+                            >
+                              {effect.severity}
+                            </div>
+                            <span className='text-white font-medium'>
+                              {effect.type}
+                            </span>
                           </div>
-                          <span className="text-white font-medium">{effect.type}</span>
-                        </div>
-                        <div className="text-slate-400">
-                          {expandedSideEffects.has(effect.nodeId) ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                        </div>
-                      </button>
+                          <div className='text-slate-400'>
+                            {expandedSideEffects.has(effect.nodeId) ? (
+                              <EyeOff className='w-4 h-4' />
+                            ) : (
+                              <Eye className='w-4 h-4' />
+                            )}
+                          </div>
+                        </button>
 
-                      {expandedSideEffects.has(effect.nodeId) && (
-                        <div className="mt-2 pt-2 border-t border-slate-600">
-                          <p className="text-sm text-slate-300 mb-2">{effect.description}</p>
-                          <div className="grid grid-cols-2 gap-2 text-xs">
-                            <div>
-                              <span className="text-slate-400">Reversible:</span>
-                              <span className={`ml-1 ${effect.reversible ? 'text-green-400' : 'text-red-400'}`}>
-                                {effect.reversible ? 'Yes' : 'No'}
-                              </span>
-                            </div>
-                            <div>
-                              <span className="text-slate-400">External:</span>
-                              <span className={`ml-1 ${effect.externalDependency ? 'text-yellow-400' : 'text-green-400'}`}>
-                                {effect.externalDependency ? 'Yes' : 'No'}
-                              </span>
+                        {expandedSideEffects.has(effect.nodeId) && (
+                          <div className='mt-2 pt-2 border-t border-slate-600'>
+                            <p className='text-sm text-slate-300 mb-2'>
+                              {effect.description}
+                            </p>
+                            <div className='grid grid-cols-2 gap-2 text-xs'>
+                              <div>
+                                <span className='text-slate-400'>
+                                  Reversible:
+                                </span>
+                                <span
+                                  className={`ml-1 ${
+                                    effect.reversible
+                                      ? 'text-green-400'
+                                      : 'text-red-400'
+                                  }`}
+                                >
+                                  {effect.reversible ? 'Yes' : 'No'}
+                                </span>
+                              </div>
+                              <div>
+                                <span className='text-slate-400'>
+                                  External:
+                                </span>
+                                <span
+                                  className={`ml-1 ${
+                                    effect.externalDependency
+                                      ? 'text-yellow-400'
+                                      : 'text-green-400'
+                                  }`}
+                                >
+                                  {effect.externalDependency ? 'Yes' : 'No'}
+                                </span>
+                              </div>
                             </div>
                           </div>
-                        </div>
-                      )}
-                    </div>
-                  ))}
+                        )}
+                      </div>
+                    )
+                  )}
                 </div>
               </div>
             )}
 
             {/* Recommendations */}
             {safetyAnalysis.recommendations.length > 0 && (
-              <div className="bg-blue-500/10 border border-blue-500/20 p-4 rounded-lg">
-                <h4 className="font-semibold text-blue-400 mb-2">Recommendations</h4>
-                <ul className="space-y-1">
-                  {safetyAnalysis.recommendations.map((rec: string, index: number) => (
-                    <li key={index} className="text-sm text-blue-300 flex items-start gap-2">
-                      <span className="text-blue-400 mt-1">•</span>
-                      {rec}
-                    </li>
-                  ))}
+              <div className='bg-blue-500/10 border border-blue-500/20 p-4 rounded-lg'>
+                <h4 className='font-semibold text-blue-400 mb-2'>
+                  Recommendations
+                </h4>
+                <ul className='space-y-1'>
+                  {safetyAnalysis.recommendations.map(
+                    (rec: string, index: number) => (
+                      <li
+                        key={index}
+                        className='text-sm text-blue-300 flex items-start gap-2'
+                      >
+                        <span className='text-blue-400 mt-1'>•</span>
+                        {rec}
+                      </li>
+                    )
+                  )}
                 </ul>
               </div>
             )}
@@ -300,81 +1177,138 @@ const ReplayInterface: React.FC<ReplayInterfaceProps> = ({
         )}
 
         {activeTab === 'modifications' && (
-          <div className="space-y-4">
-            <div className="bg-slate-700/50 p-4 rounded-lg">
-              <h4 className="font-semibold text-white mb-3">Modify Node Behavior</h4>
+          <div className='space-y-4'>
+            <div className='bg-slate-700/50 p-4 rounded-lg'>
+              <h4 className='font-semibold text-white mb-3'>
+                Modify Node Behavior
+              </h4>
 
               {/* Prompt Modification */}
-              <div className="mb-4">
-                <label className="block text-sm font-medium text-slate-300 mb-2">Modify Prompt</label>
-                <div className="space-y-2">
-                  <div className="text-xs text-slate-400">Original:</div>
-                  <div className="text-xs text-slate-300 bg-slate-700/50 p-2 rounded border-l-2 border-slate-500 max-h-40 overflow-y-auto">
+              <div className='mb-4'>
+                <label className='block text-sm font-medium text-slate-300 mb-2'>
+                  Modify Prompt
+                </label>
+                <div className='space-y-2'>
+                  <div className='text-xs text-slate-400'>Original:</div>
+                  <div className='text-xs text-slate-300 bg-slate-700/50 p-2 rounded border-l-2 border-slate-500 max-h-40 overflow-y-auto'>
                     {selectedNode.prompts && selectedNode.prompts.length > 0
                       ? selectedNode.prompts.map((p: string, i: number) => (
-                          <div key={i} className={i > 0 ? 'mt-2 pt-2 border-t border-slate-600' : ''}>{p}</div>
+                          <div
+                            key={i}
+                            className={
+                              i > 0 ? 'mt-2 pt-2 border-t border-slate-600' : ''
+                            }
+                          >
+                            {p}
+                          </div>
                         ))
                       : selectedNode.response
-                        ? `Response: ${selectedNode.response}`
-                        : selectedNode.toolInput
-                          ? `Tool Input: ${typeof selectedNode.toolInput === 'string' ? selectedNode.toolInput : JSON.stringify(selectedNode.toolInput, null, 2)}`
-                          : 'No prompt available'}
+                      ? `Response: ${selectedNode.response}`
+                      : selectedNode.toolInput
+                      ? `Tool Input: ${
+                          typeof selectedNode.toolInput === 'string'
+                            ? selectedNode.toolInput
+                            : JSON.stringify(selectedNode.toolInput, null, 2)
+                        }`
+                      : 'No prompt available'}
                   </div>
-                  <div className="text-xs text-slate-400">Modified:</div>
+                  <div className='text-xs text-slate-400'>Modified:</div>
                   <textarea
-                    value={modifications.promptChanges?.get(selectedNode.id) ||
-                           (selectedNode.prompts && selectedNode.prompts.length > 0 ? selectedNode.prompts.join('\n\n') : '') ||
-                           selectedNode.response ||
-                           (typeof selectedNode.toolInput === 'string' ? selectedNode.toolInput : JSON.stringify(selectedNode.toolInput, null, 2)) ||
-                           ''}
-                    onChange={(e) => handleModificationChange('promptChanges', selectedNode.id, e.target.value)}
-                    className="w-full bg-slate-600 border border-slate-500 rounded-md px-3 py-2 text-sm text-white placeholder-slate-400 focus:ring-blue-500 focus:border-blue-500"
+                    value={
+                      modifications.promptChanges?.get(selectedNode.id) ||
+                      (selectedNode.prompts && selectedNode.prompts.length > 0
+                        ? selectedNode.prompts.join('\n\n')
+                        : '') ||
+                      selectedNode.response ||
+                      (typeof selectedNode.toolInput === 'string'
+                        ? selectedNode.toolInput
+                        : JSON.stringify(selectedNode.toolInput, null, 2)) ||
+                      ''
+                    }
+                    onChange={(e) =>
+                      handleModificationChange(
+                        'promptChanges',
+                        selectedNode.id,
+                        e.target.value
+                      )
+                    }
+                    className='w-full bg-slate-600 border border-slate-500 rounded-md px-3 py-2 text-sm text-white placeholder-slate-400 focus:ring-blue-500 focus:border-blue-500'
                     rows={6}
-                    placeholder="Enter modified prompt..."
+                    placeholder='Enter modified prompt...'
                   />
                 </div>
               </div>
 
               {/* Tool Response Override */}
               {selectedNode.toolName && (
-                <div className="mb-4">
-                  <label className="block text-sm font-medium text-slate-300 mb-2">Override Tool Response</label>
-                  <div className="space-y-2">
-                    <div className="text-xs text-slate-400">Original Response:</div>
-                    <div className="text-xs text-slate-300 bg-slate-700/50 p-2 rounded border-l-2 border-green-500 max-h-40 overflow-y-auto whitespace-pre-wrap">
-                      {selectedNode.toolOutput
-                        ? (typeof selectedNode.toolOutput === 'string' ? selectedNode.toolOutput : JSON.stringify(selectedNode.toolOutput, null, 2))
-                        : selectedNode.response
-                          ? selectedNode.response
-                          : 'No response available'}
+                <div className='mb-4'>
+                  <label className='block text-sm font-medium text-slate-300 mb-2'>
+                    Override Tool Response
+                  </label>
+                  <div className='space-y-2'>
+                    <div className='text-xs text-slate-400'>
+                      Original Response:
                     </div>
-                    <div className="text-xs text-slate-400">Mock Response:</div>
+                    <div className='text-xs text-slate-300 bg-slate-700/50 p-2 rounded border-l-2 border-green-500 max-h-40 overflow-y-auto whitespace-pre-wrap'>
+                      {selectedNode.toolOutput
+                        ? typeof selectedNode.toolOutput === 'string'
+                          ? selectedNode.toolOutput
+                          : JSON.stringify(selectedNode.toolOutput, null, 2)
+                        : selectedNode.response
+                        ? selectedNode.response
+                        : 'No response available'}
+                    </div>
+                    <div className='text-xs text-slate-400'>Mock Response:</div>
                     <textarea
-                      value={modifications.toolResponseOverrides?.get(selectedNode.id) ||
-                              (selectedNode.toolOutput
-                                ? (typeof selectedNode.toolOutput === 'string' ? selectedNode.toolOutput : JSON.stringify(selectedNode.toolOutput, null, 2))
-                                : selectedNode.response || '')}
-                      onChange={(e) => handleModificationChange('toolResponseOverrides', selectedNode.id, e.target.value)}
-                      className="w-full bg-slate-600 border border-slate-500 rounded-md px-3 py-2 text-sm text-white placeholder-slate-400 focus:ring-blue-500 focus:border-blue-500 font-mono"
+                      value={
+                        modifications.toolResponseOverrides?.get(
+                          selectedNode.id
+                        ) ||
+                        (selectedNode.toolOutput
+                          ? typeof selectedNode.toolOutput === 'string'
+                            ? selectedNode.toolOutput
+                            : JSON.stringify(selectedNode.toolOutput, null, 2)
+                          : selectedNode.response || '')
+                      }
+                      onChange={(e) =>
+                        handleModificationChange(
+                          'toolResponseOverrides',
+                          selectedNode.id,
+                          e.target.value
+                        )
+                      }
+                      className='w-full bg-slate-600 border border-slate-500 rounded-md px-3 py-2 text-sm text-white placeholder-slate-400 focus:ring-blue-500 focus:border-blue-500 font-mono'
                       rows={6}
-                      placeholder="Enter mock tool response..."
+                      placeholder='Enter mock tool response...'
                     />
                   </div>
                 </div>
               )}
 
               {/* Model Change */}
-              <div className="mb-4">
-                <label className="block text-sm font-medium text-slate-300 mb-2">Change Model</label>
+              <div className='mb-4'>
+                <label className='block text-sm font-medium text-slate-300 mb-2'>
+                  Change Model
+                </label>
                 <select
-                  value={modifications.modelChanges?.get(selectedNode.id) || selectedNode.model || 'gpt-3.5-turbo'}
-                  onChange={(e) => handleModificationChange('modelChanges', selectedNode.id, e.target.value)}
-                  className="w-full bg-slate-600 border border-slate-500 rounded-md px-3 py-2 text-sm text-white focus:ring-blue-500 focus:border-blue-500"
+                  value={
+                    modifications.modelChanges?.get(selectedNode.id) ||
+                    selectedNode.model ||
+                    'gpt-3.5-turbo'
+                  }
+                  onChange={(e) =>
+                    handleModificationChange(
+                      'modelChanges',
+                      selectedNode.id,
+                      e.target.value
+                    )
+                  }
+                  className='w-full bg-slate-600 border border-slate-500 rounded-md px-3 py-2 text-sm text-white focus:ring-blue-500 focus:border-blue-500'
                 >
-                  <option value="gpt-3.5-turbo">GPT-3.5 Turbo</option>
-                  <option value="gpt-4">GPT-4</option>
-                  <option value="gpt-4-turbo">GPT-4 Turbo</option>
-                  <option value="claude-3-sonnet">Claude 3 Sonnet</option>
+                  <option value='gpt-3.5-turbo'>GPT-3.5 Turbo</option>
+                  <option value='gpt-4'>GPT-4</option>
+                  <option value='gpt-4-turbo'>GPT-4 Turbo</option>
+                  <option value='claude-3-sonnet'>Claude 3 Sonnet</option>
                 </select>
               </div>
             </div>
@@ -382,85 +1316,138 @@ const ReplayInterface: React.FC<ReplayInterfaceProps> = ({
         )}
 
         {activeTab === 'options' && (
-          <div className="space-y-4">
-            <div className="bg-slate-700/50 p-4 rounded-lg">
-              <h4 className="font-semibold text-white mb-3">Replay Options</h4>
+          <div className='space-y-4'>
+            <div className='bg-slate-700/50 p-4 rounded-lg'>
+              <h4 className='font-semibold text-white mb-3'>Replay Options</h4>
 
-              <div className="space-y-3">
-                <label className="flex items-center gap-3">
+              <div className='space-y-3'>
+                <label className='flex items-center gap-3'>
                   <input
-                    type="checkbox"
+                    type='checkbox'
                     checked={options.mockExternalCalls}
-                    onChange={(e) => setOptions(prev => ({ ...prev, mockExternalCalls: e.target.checked }))}
-                    className="rounded border-slate-500 bg-slate-600 text-blue-500 focus:ring-blue-500"
+                    onChange={(e) =>
+                      setOptions((prev) => ({
+                        ...prev,
+                        mockExternalCalls: e.target.checked,
+                      }))
+                    }
+                    className='rounded border-slate-500 bg-slate-600 text-blue-500 focus:ring-blue-500'
                   />
-                  <span className="text-sm text-slate-300">Mock external API calls</span>
+                  <span className='text-sm text-slate-300'>
+                    Mock external API calls
+                  </span>
                 </label>
 
-                <label className="flex items-center gap-3">
+                <label className='flex items-center gap-3'>
                   <input
-                    type="checkbox"
+                    type='checkbox'
                     checked={options.useOriginalData}
-                    onChange={(e) => setOptions(prev => ({ ...prev, useOriginalData: e.target.checked }))}
-                    className="rounded border-slate-500 bg-slate-600 text-blue-500 focus:ring-blue-500"
+                    onChange={(e) =>
+                      setOptions((prev) => ({
+                        ...prev,
+                        useOriginalData: e.target.checked,
+                      }))
+                    }
+                    className='rounded border-slate-500 bg-slate-600 text-blue-500 focus:ring-blue-500'
                   />
-                  <span className="text-sm text-slate-300">Use original data for time-dependent operations</span>
+                  <span className='text-sm text-slate-300'>
+                    Use original data for time-dependent operations
+                  </span>
                 </label>
 
-                <label className="flex items-center gap-3">
+                <label className='flex items-center gap-3'>
                   <input
-                    type="checkbox"
+                    type='checkbox'
                     checked={options.confirmEachSideEffect}
-                    onChange={(e) => setOptions(prev => ({ ...prev, confirmEachSideEffect: e.target.checked }))}
-                    className="rounded border-slate-500 bg-slate-600 text-blue-500 focus:ring-blue-500"
+                    onChange={(e) =>
+                      setOptions((prev) => ({
+                        ...prev,
+                        confirmEachSideEffect: e.target.checked,
+                      }))
+                    }
+                    className='rounded border-slate-500 bg-slate-600 text-blue-500 focus:ring-blue-500'
                   />
-                  <span className="text-sm text-slate-300">Confirm each side effect individually</span>
+                  <span className='text-sm text-slate-300'>
+                    Confirm each side effect individually
+                  </span>
                 </label>
 
                 <div>
-                  <label className="block text-sm font-medium text-slate-300 mb-2">Max Replay Depth</label>
+                  <label className='block text-sm font-medium text-slate-300 mb-2'>
+                    Max Replay Depth
+                  </label>
                   <input
-                    type="number"
+                    type='number'
                     value={options.maxReplayDepth}
-                    onChange={(e) => setOptions(prev => ({ ...prev, maxReplayDepth: parseInt(e.target.value) }))}
-                    className="w-full bg-slate-600 border border-slate-500 rounded-md px-3 py-2 text-sm text-white focus:ring-blue-500 focus:border-blue-500"
-                    min="1"
-                    max="50"
+                    onChange={(e) =>
+                      setOptions((prev) => ({
+                        ...prev,
+                        maxReplayDepth: parseInt(e.target.value),
+                      }))
+                    }
+                    className='w-full bg-slate-600 border border-slate-500 rounded-md px-3 py-2 text-sm text-white focus:ring-blue-500 focus:border-blue-500'
+                    min={1}
+                    max={50}
                   />
                 </div>
 
                 {/* --- Live Replay Options --- */}
-                <label className="flex items-center gap-3 mt-3">
+                <label className='flex items-center gap-3 mt-3'>
                   <input
-                    type="checkbox"
+                    type='checkbox'
                     checked={!!options.liveMode}
-                    onChange={(e) => setOptions(prev => ({ ...prev, liveMode: e.target.checked }))}
-                    className="rounded border-slate-500 bg-slate-600 text-blue-500 focus:ring-blue-500"
+                    onChange={(e) =>
+                      setOptions((prev) => ({
+                        ...prev,
+                        liveMode: e.target.checked,
+                      }))
+                    }
+                    className='rounded border-slate-500 bg-slate-600 text-blue-500 focus:ring-blue-500'
                   />
-                  <span className="text-sm text-slate-300">Live mode (re-run changed LLM nodes)</span>
+                  <span className='text-sm text-slate-300'>
+                    Live mode (re-run changed LLM nodes)
+                  </span>
                 </label>
 
-                <div className="grid grid-cols-2 gap-3 mt-2">
+                <div className='grid grid-cols-2 gap-3 mt-2'>
                   <div>
-                    <label className="block text-sm font-medium text-slate-300 mb-1">Temperature</label>
+                    <label className='block text-sm font-medium text-slate-300 mb-1'>
+                      Temperature
+                    </label>
                     <input
-                      type="number" step="0.1" min="0" max="2"
+                      type='number'
+                      step={0.1}
+                      min={0}
+                      max={2}
                       value={options.temperature ?? 0.7}
-                      onChange={(e) => setOptions(prev => ({ ...prev, temperature: Number(e.target.value) }))}
-                      className="w-full bg-slate-600 border border-slate-500 rounded-md px-3 py-2 text-sm text-white focus:ring-blue-500 focus:border-blue-500"
+                      onChange={(e) =>
+                        setOptions((prev) => ({
+                          ...prev,
+                          temperature: Number(e.target.value),
+                        }))
+                      }
+                      className='w-full bg-slate-600 border border-slate-500 rounded-md px-3 py-2 text-sm text-white focus:ring-blue-500 focus:border-blue-500'
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-slate-300 mb-1">Max tokens</label>
+                    <label className='block text-sm font-medium text-slate-300 mb-1'>
+                      Max tokens
+                    </label>
                     <input
-                      type="number" min={1} max={8192}
+                      type='number'
+                      min={1}
+                      max={8192}
                       value={options.maxTokens ?? 512}
-                      onChange={(e) => setOptions(prev => ({ ...prev, maxTokens: Number(e.target.value) }))}
-                      className="w-full bg-slate-600 border border-slate-500 rounded-md px-3 py-2 text-sm text-white focus:ring-blue-500 focus:border-blue-500"
+                      onChange={(e) =>
+                        setOptions((prev) => ({
+                          ...prev,
+                          maxTokens: Number(e.target.value),
+                        }))
+                      }
+                      className='w-full bg-slate-600 border border-slate-500 rounded-md px-3 py-2 text-sm text-white focus:ring-blue-500 focus:border-blue-500'
                     />
                   </div>
                 </div>
-
               </div>
             </div>
           </div>
@@ -468,39 +1455,41 @@ const ReplayInterface: React.FC<ReplayInterfaceProps> = ({
       </div>
 
       {/* Footer */}
-      <div className="p-4 border-t border-slate-700 bg-slate-700/30">
-        <div className="flex items-center justify-between">
-          <div className="text-sm text-slate-400">
+      <div className='p-4 border-t border-slate-700 bg-slate-700/30'>
+        <div className='flex items-center justify-between'>
+          <div className='text-sm text-slate-400'>
             {safetyAnalysis && (
               <>
                 {safetyAnalysis.sideEffects.length} side effects detected
                 {safetyAnalysis.mode === ReplayMode.BLOCKED && (
-                  <span className="text-red-400 ml-2">• Replay blocked</span>
+                  <span className='text-red-400 ml-2'>• Replay blocked</span>
                 )}
               </>
             )}
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className='flex items-center gap-2'>
             <button
               onClick={onClose}
-              className="px-3 py-2 text-sm text-slate-400 hover:text-white transition-colors"
+              className='px-3 py-2 text-sm text-slate-400 hover:text-white transition-colors'
             >
               Cancel
             </button>
             <button
               onClick={handleStartReplay}
-              disabled={isReplaying || safetyAnalysis?.mode === ReplayMode.BLOCKED}
-              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-600 disabled:cursor-not-allowed text-white text-sm font-medium rounded-md transition-colors flex items-center gap-2"
+              disabled={
+                isReplaying || safetyAnalysis?.mode === ReplayMode.BLOCKED
+              }
+              className='px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-600 disabled:cursor-not-allowed text-white text-sm font-medium rounded-md transition-colors flex items-center gap-2'
             >
               {isReplaying ? (
                 <>
-                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  <div className='w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin' />
                   Replaying...
                 </>
               ) : (
                 <>
-                  <Play className="w-4 h-4" />
+                  <Play className='w-4 h-4' />
                   Start Replay
                 </>
               )}
@@ -510,6 +1499,4 @@ const ReplayInterface: React.FC<ReplayInterfaceProps> = ({
       </div>
     </div>
   );
-};
-
-export default ReplayInterface;
+}

@@ -8,7 +8,7 @@
     "dashboard"
   ],
   "scripts": {
-    "dev": "concurrently \"npm run dev:backend\" \"npm run dev:dashboard\"",
+    "dev": "concurrently -k -n backend,dashboard \"npm run dev --workspace=backend\" \"npm run dev --workspace=dashboard\"",
     "dev:backend": "npm run dev --workspace=backend",
     "dev:dashboard": "npm run dev --workspace=dashboard",
     "build": "npm run build --workspaces",
@@ -18,9 +18,11 @@
   "devDependencies": {
     "concurrently": "^8.2.2",
     "supports-color": "^8",
-    "typescript": "^5.3.3"
+    "typescript": "^5.3.3",
+    "wait-on": "^9.0.1"
   },
   "dependencies": {
+    "socket.io-client": "^4.8.1",
     "sqlite": "^5.1.1",
     "sqlite3": "^5.1.7"
   }

@@ -4,6 +4,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { Node, Edge } from 'reactflow';
 import { io, Socket } from 'socket.io-client';
+import createLLMCaller from '../utils/createLLMCaller';
 import type {
   UseTraceDataOptions,
   UseAnomalyDetectionOptions,
@@ -14,6 +15,7 @@ import type {
   LayoutType,
   FilterCriteria,
 } from '../types';
+
 
 // ============================================================================
 // useTraceData - Fetch and manage trace data
@@ -103,55 +105,60 @@ export const useRealtimeUpdates = (traceId: string | null) => {
   const connect = useCallback(() => {
     if (!traceId) return;
 
-    const socket = io('http://localhost:3000', {
-      auth: {
-        projectName: 'dashboard',
-      },
+    // ✅ Use relative path so Vite proxy can redirect to backend:3001
+    const socket = io('/', {
+      path: '/socket.io',
+      transports: ['websocket'], // 👈 force websocket (no polling)
+      auth: { projectName: 'dashboard' },
+      reconnectionAttempts: 5,
+      reconnectionDelay: 2000,
     });
+
     wsRef.current = socket;
 
     socket.on('connect', () => {
-      console.log('Socket.IO connected:', socket.id);
+      console.log('🔌 Socket.IO connected:', socket.id);
       setConnected(true);
-
-      // Subscribe to trace updates
       socket.emit('watch_trace', traceId);
     });
 
     socket.on('trace_data', (data) => {
+      console.log('📦 trace_data', data);
       setLastUpdate({
         type: 'trace_complete',
-        traceId: traceId,
+        traceId,
         timestamp: Date.now(),
-        data: data,
+        data,
       });
     });
 
     socket.on('new_event', (event) => {
+      console.log('✨ new_event', event);
       setLastUpdate({
         type: 'node_complete',
-        traceId: traceId,
+        traceId,
         timestamp: Date.now(),
         data: event,
       });
     });
 
-    socket.on('disconnect', () => {
-      console.log('Socket.IO disconnected');
+    socket.on('disconnect', (reason) => {
+      console.log('⚠️ Socket.IO disconnected:', reason);
       setConnected(false);
-
-      // Attempt to reconnect after 3 seconds
-      reconnectTimeoutRef.current = setTimeout(() => {
-        console.log('Attempting to reconnect...');
+      reconnectTimeoutRef.current = window.setTimeout(() => {
+        console.log('🔄 Attempting to reconnect...');
         connect();
       }, 3000);
     });
 
+    socket.on('connect_error', (err) => {
+      console.error('❌ Socket connection error:', err.message);
+    });
+
     return () => {
       socket.disconnect();
-      if (reconnectTimeoutRef.current) {
+      if (reconnectTimeoutRef.current)
         clearTimeout(reconnectTimeoutRef.current);
-      }
     };
   }, [traceId]);
 
@@ -162,7 +169,6 @@ export const useRealtimeUpdates = (traceId: string | null) => {
 
   return { connected, lastUpdate };
 };
-
 // ============================================================================
 // useKeyboardShortcuts - Handle keyboard shortcuts
 // ============================================================================
@@ -445,54 +451,85 @@ import {
   type ReplayModifications,
 } from '../utils/ReplayEngine';
 
-export const useReplay = (
-  replayEngine: ReplayEngine,
-  trace: any,
-  baseOptions?: Partial<ReplayOptions>
-) => {
-  const [replaying, setReplaying] = useState(false);
-  const [result, setResult] = useState<ReplayResult | null>(null);
+// export const useReplay = (
+//   replayEngine: ReplayEngine,
+//   trace: any,
+//   baseOptions?: Partial<ReplayOptions>
+// ) => {
+//   const [replaying, setReplaying] = useState(false);
+//   const [result, setResult] = useState<ReplayResult | null>(null);
 
-  const replayFromNode = useCallback(
-    async (
-      nodeId: string,
-      modifications: ReplayModifications,
-      overrides?: Partial<ReplayOptions>
-    ) => {
-      setReplaying(true);
-      setResult(null);
+//   const replayFromNode = useCallback(
+//     async (
+//       nodeId: string,
+//       modifications: ReplayModifications,
+//       overrides?: Partial<ReplayOptions>
+//     ) => {
+//       setReplaying(true);
+//       setResult(null);
 
-      try {
-        const options: ReplayOptions = {
-          mode: ReplayMode.SAFE,
-          mockExternalCalls: true,
-          useOriginalData: true,
-          ...baseOptions,
-          ...overrides,
-        };
+//       try {
+//         const options: ReplayOptions = {
+//           mode: ReplayMode.SAFE,
+//           mockExternalCalls: true,
+//           useOriginalData: true,
+//           ...baseOptions,
+//           ...overrides,
+//         };
 
-        const data = await replayEngine.executeReplay(
-          nodeId,
-          trace,
-          modifications,
-          options
-        );
-        setResult(data);
-        return data;
-      } finally {
-        setReplaying(false);
-      }
-    },
-    [replayEngine, trace, baseOptions]
-  );
+//         const data = await replayEngine.executeReplay(
+//           nodeId,
+//           trace,
+//           modifications,
+//           options
+//         );
+//         setResult(data);
+//         return data;
+//       } finally {
+//         setReplaying(false);
+//       }
+//     },
+//     [replayEngine, trace, baseOptions]
+//   );
 
-  return {
-    replayFromNode,
-    replaying,
-    result,
-    clearResult: () => setResult(null),
-  };
-};
+//   return {
+//     replayFromNode,
+//     replaying,
+//     result,
+//     clearResult: () => setResult(null),
+//   };
+// };
+
+export function useReplay() {
+  const [output, setOutput] = useState<string>('');
+  const [loading, setLoading] = useState(false);
+  const streamBuf = useRef<string>('');
+
+  const send = useCallback(async (userText: string, opts?: { stream?: boolean }) => {
+    setLoading(true);
+    setOutput('');
+    streamBuf.current = '';
+
+    const client = await createLLMCaller();
+
+    if (opts?.stream) {
+      client.onDelta(({ delta }) => {
+        streamBuf.current += delta;
+        setOutput(streamBuf.current);
+      });
+    }
+
+    const res = await client.send([{ role: 'user', content: userText }], {
+      stream: !!opts?.stream,
+    });
+
+    if (res.ok && res.text) setOutput(res.text); // one-shot or final
+    if (!res.ok && res.error) setOutput(`⚠️ ${res.error}`);
+    setLoading(false);
+  }, []);
+
+  return { output, loading, send };
+}
 
 // ============================================================================
 // useTraceComparison - Compare two traces

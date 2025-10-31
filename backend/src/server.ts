@@ -1,20 +1,18 @@
-/**
- * Agent Trace Backend Server
- * - Socket.IO for receiving trace events
- * - REST API for querying traces
- * Enhanced to work with frontend dashboard
- */
 import 'dotenv/config';
 import express from 'express';
-import llmRouter from './routes/llm';
+import cors from 'cors';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
-import cors from 'cors';
+import OpenAI from 'openai';
+
+import llmRouter from './routes/llm';
 import { TraceModel, NodeModel, EdgeModel } from './database/models.js';
 import { db } from './database/connection.js';
 import { initializeSchema } from './database/schema.js';
-import { TraceEvent } from './types/index.js';
+// import { TraceEvent } from "./types/index.js"; // (currently unused)
 import { TraceProcessor } from './services/trace-processor.js';
+
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY! });
 
 // Initialize database schema on startup
 initializeSchema();
@@ -22,7 +20,9 @@ initializeSchema();
 // Initialize trace processor
 const traceProcessor = new TraceProcessor();
 
-// Simple anomaly detection for backend
+// ─────────────────────────────────────────────────────────────────────────────
+// Types
+// ─────────────────────────────────────────────────────────────────────────────
 interface SimpleAnomaly {
   type: string;
   severity: string;
@@ -33,18 +33,54 @@ interface SimpleAnomaly {
   latency?: number;
 }
 
+type ChatMessage = { role: 'system' | 'user' | 'assistant'; content: string };
+type ReplayLLMRequest = {
+  requestId: string;
+  traceId?: string;
+  model: string;
+  messages: ChatMessage[];
+  temperature?: number;
+  maxTokens?: number;
+  stream?: boolean;
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// App / Server / CORS
+// ─────────────────────────────────────────────────────────────────────────────
+const app = express();
+const httpServer = createServer(app);
+
+const DEV_ORIGIN = process.env.CORS_ORIGIN || 'http://localhost:5173';
+
+// Socket.IO (CORS aligned with Vite)
+const io = new Server(httpServer, {
+  cors: {
+    origin: DEV_ORIGIN,
+    credentials: true,
+    methods: ['GET', 'POST', 'OPTIONS'],
+  },
+});
+
+// Express CORS + JSON
+app.use(cors({ origin: DEV_ORIGIN, credentials: true }));
+app.use(express.json());
+
+// REST: LLM proxy (if you use REST for some paths)
+app.use('/api/llm', llmRouter);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Helpers
+// ─────────────────────────────────────────────────────────────────────────────
 function detectSimpleAnomalies(nodes: any[], edges: any[]): SimpleAnomaly[] {
   const anomalies: SimpleAnomaly[] = [];
-
   if (nodes.length === 0) return anomalies;
 
-  // Detect expensive operations
   const totalCost = nodes.reduce((sum, node) => sum + (node.cost || 0), 0);
-  const avgCost = totalCost / nodes.length;
+  const avgCost = totalCost / nodes.length || 0;
   const expensiveThreshold = avgCost * 3;
 
   const expensiveNodes = nodes.filter(
-    (node) => (node.cost || 0) > expensiveThreshold
+    (n) => (n.cost || 0) > expensiveThreshold
   );
   for (const node of expensiveNodes) {
     anomalies.push({
@@ -52,25 +88,21 @@ function detectSimpleAnomalies(nodes: any[], edges: any[]): SimpleAnomaly[] {
       severity: (node.cost || 0) > avgCost * 5 ? 'high' : 'medium',
       title: 'Expensive Operation',
       description: `Operation costs $${(node.cost || 0).toFixed(6)}, ${(
-        (node.cost || 0) / avgCost
+        (node.cost || 0) / (avgCost || 1)
       ).toFixed(1)}x average`,
       affectedNodes: [node.id],
       cost: node.cost,
     });
   }
 
-  // Detect redundant tool calls
+  // Redundant tool calls (same toolName + toolInput)
   const toolCalls = nodes.filter((node) => node.type?.includes('tool_start'));
   const toolCallGroups = new Map<string, any[]>();
-
   for (const call of toolCalls) {
     const key = `${call.toolName}-${call.toolInput}`;
-    if (!toolCallGroups.has(key)) {
-      toolCallGroups.set(key, []);
-    }
+    if (!toolCallGroups.has(key)) toolCallGroups.set(key, []);
     toolCallGroups.get(key)!.push(call);
   }
-
   for (const [key, calls] of toolCallGroups) {
     if (calls.length > 3) {
       const [toolName] = key.split('-', 1);
@@ -88,48 +120,18 @@ function detectSimpleAnomalies(nodes: any[], edges: any[]): SimpleAnomaly[] {
   return anomalies;
 }
 
-// dotenv is initialized via "import 'dotenv/config'" at the top of the file
-const app = express();
-const httpServer = createServer(app);
-
-// Socket.IO with CORS
-const io = new Server(httpServer, {
-  cors: {
-    origin: process.env.CORS_ORIGIN || '*',
-    methods: ['GET', 'POST'],
-  },
-});
-
-// Middleware
-app.use(cors());
-app.use(express.json());
-app.use('/api/llm', llmRouter);
-
-// ============================================================================
-// HELPER FUNCTIONS
-// ============================================================================
-
-/**
- * Generate human-readable label for a node
- */
+// Generate human-readable label for a node (was commented but used later)
 function generateNodeLabel(node: any, index: number): string {
   const stepNumber = index + 1;
-
   switch (node.type) {
     case 'llm_start':
       return 'LLM Processing';
     case 'llm_end':
       return 'LLM Response';
     case 'tool_start':
-      if (node.toolName) {
-        return `${node.toolName} Call`;
-      }
-      return 'Tool Execution';
+      return node.toolName ? `${node.toolName} Call` : 'Tool Execution';
     case 'tool_end':
-      if (node.toolName) {
-        return `${node.toolName} Result`;
-      }
-      return 'Tool Complete';
+      return node.toolName ? `${node.toolName} Result` : 'Tool Complete';
     case 'chain_start':
       return 'Process Start';
     case 'chain_end':
@@ -145,90 +147,43 @@ function generateNodeLabel(node: any, index: number): string {
   }
 }
 
-/**
- * Calculate cost for a node based on tokens and model
- */
 function calculateCost(node: any): number {
   if (node.cost) return node.cost;
-
-  // Basic cost calculation based on tokens
   const tokens = node.tokens;
-  if (!tokens) {
-    // If no token data, estimate based on content
-    return estimateCostFromContent(node);
-  }
-
-  // Rough cost estimates (these should be configurable)
-  const inputCostPer1k = 0.0015; // $0.0015 per 1k input tokens
-  const outputCostPer1k = 0.002; // $0.002 per 1k output tokens
-
+  if (!tokens) return estimateCostFromContent(node);
+  const inputCostPer1k = 0.0015;
+  const outputCostPer1k = 0.002;
   const inputCost = ((tokens.input || 0) / 1000) * inputCostPer1k;
   const outputCost = ((tokens.output || 0) / 1000) * outputCostPer1k;
-
   return inputCost + outputCost;
 }
 
-/**
- * Estimate cost based on content when token data is not available
- */
 function estimateCostFromContent(node: any): number {
   let inputTokens = 0;
   let outputTokens = 0;
+  if (node.prompt) inputTokens += Math.ceil(node.prompt.length / 4);
+  if (node.response) outputTokens += Math.ceil(node.response.length / 4);
+  if (node.toolInput) inputTokens += Math.ceil(node.toolInput.length / 4);
+  if (node.toolOutput) outputTokens += Math.ceil(node.toolOutput.length / 4);
 
-  // Estimate tokens based on content
-  if (node.prompt) {
-    inputTokens = Math.ceil(node.prompt.length / 4); // Rough estimate: 4 chars per token
-  }
-
-  if (node.response) {
-    outputTokens = Math.ceil(node.response.length / 4);
-  }
-
-  if (node.toolInput) {
-    inputTokens += Math.ceil(node.toolInput.length / 4);
-  }
-
-  if (node.toolOutput) {
-    outputTokens += Math.ceil(node.toolOutput.length / 4);
-  }
-
-  // Apply cost rates
   const inputCostPer1k = 0.0015;
   const outputCostPer1k = 0.002;
-
   return (
     (inputTokens / 1000) * inputCostPer1k +
     (outputTokens / 1000) * outputCostPer1k
   );
 }
 
-/**
- * Estimate tokens from content when token data is not available
- */
 function estimateTokensFromContent(
   node: any
 ): { input: number; output: number; total: number } | undefined {
   let inputTokens = 0;
   let outputTokens = 0;
+  if (node.prompt) inputTokens += Math.ceil(node.prompt.length / 4);
+  if (node.response) outputTokens += Math.ceil(node.response.length / 4);
+  if (node.toolInput) inputTokens += Math.ceil(node.toolInput.length / 4);
+  if (node.toolOutput) outputTokens += Math.ceil(node.toolOutput.length / 4);
 
-  // Estimate tokens based on content
-  if (node.prompt) {
-    inputTokens = Math.ceil(node.prompt.length / 4); // Rough estimate: 4 chars per token
-  }
-
-  if (node.response) {
-    outputTokens = Math.ceil(node.response.length / 4);
-  }
-
-  if (node.toolInput) {
-    inputTokens += Math.ceil(node.toolInput.length / 4);
-  }
-
-  if (node.toolOutput) {
-    outputTokens += Math.ceil(node.toolOutput.length / 4);
-  }
-
-  // Only return token data if we have some content
   if (inputTokens > 0 || outputTokens > 0) {
     return {
       input: inputTokens,
@@ -236,83 +191,64 @@ function estimateTokensFromContent(
       total: inputTokens + outputTokens,
     };
   }
-
   return undefined;
 }
 
-/**
- * Calculate node position for graph layout
- */
 function calculateNodePosition(index: number): { x: number; y: number } {
   const cols = 3;
   const col = index % cols;
   const row = Math.floor(index / cols);
-
-  return {
-    x: 200 + col * 250,
-    y: 100 + row * 200,
-  };
+  return { x: 200 + col * 250, y: 100 + row * 200 };
 }
 
-/**
- * Generate trace description from nodes
- */
 function generateTraceDescription(trace: any, nodes: any[]): string {
   const status = trace.status || 'running';
   const nodeCount = nodes.length;
-
-  // Try to get description from first LLM node
   const firstLLMNode = nodes.find((n) => n.type === 'llm');
   if (firstLLMNode?.data?.prompts?.[0]) {
     const prompt = firstLLMNode.data.prompts[0];
-    // Truncate long prompts
     return prompt.length > 100 ? prompt.substring(0, 100) + '...' : prompt;
   }
-
-  // Fallback descriptions
-  if (status === 'complete') {
-    return `Completed with ${nodeCount} steps`;
-  } else if (status === 'error') {
-    return `Failed at step ${nodeCount}`;
-  } else {
-    return `Processing (${nodeCount} steps so far)`;
-  }
+  if (status === 'complete') return `Completed with ${nodeCount} steps`;
+  if (status === 'error') return `Failed at step ${nodeCount}`;
+  return `Processing (${nodeCount} steps so far)`;
 }
 
-/**
- * Calculate total latency for a trace
- */
 function calculateTraceLatency(trace: any): number {
-  if (trace.endTime && trace.startTime) {
-    return trace.endTime - trace.startTime;
-  }
-  // If trace is still running
+  if (trace.endTime && trace.startTime) return trace.endTime - trace.startTime;
   return Date.now() - trace.startTime;
 }
 
-// ============================================================================
-// HEALTH CHECK
-// ============================================================================
+function mapOpenAIEventType(openaiType: string): string {
+  switch (openaiType) {
+    case 'function_call_start':
+      return 'llm_start';
+    case 'function_call_end':
+      return 'llm_end';
+    case 'tool_selection':
+      return 'tool_start';
+    case 'conversation_turn':
+      return 'llm_end';
+    case 'error':
+      return 'error';
+    default:
+      return 'custom';
+  }
+}
 
-app.get('/health', (req, res) => {
-  res.json({
-    status: 'ok',
-    uptime: process.uptime(),
-    timestamp: Date.now(),
-  });
+// ─────────────────────────────────────────────────────────────────────────────
+// Health
+// ─────────────────────────────────────────────────────────────────────────────
+app.get('/health', (_req, res) => {
+  res.json({ status: 'ok', uptime: process.uptime(), timestamp: Date.now() });
 });
 
-// ============================================================================
-// REST API ROUTES
-// ============================================================================
-
-/**
- * GET /api/traces - Get all traces (enhanced for frontend)
- */
+// ─────────────────────────────────────────────────────────────────────────────
+// REST API: Traces / Stats
+// ─────────────────────────────────────────────────────────────────────────────
 app.get('/api/traces', (req, res) => {
   try {
     const { project } = req.query;
-
     const traces = project
       ? TraceModel.list({
           projectName: project as string,
@@ -321,56 +257,38 @@ app.get('/api/traces', (req, res) => {
         })
       : TraceModel.list({ limit: 100, offset: 0 });
 
-    // ✅ ADD THIS CHECK
-    if (!traces) {
-      return res.json({ traces: [], total: 0 });
-    }
+    if (!traces) return res.json({ traces: [], total: 0 });
 
-    // Enhance traces with cost and node count from nodes table
     const enhancedTraces = traces.map((trace: any) => {
       const nodes = db.query(
         'SELECT cost, type FROM nodes WHERE trace_id = ?',
         [trace.id]
       );
       const totalCost = nodes.reduce(
-        (sum: number, node: any) => sum + (node.cost || 0),
+        (sum: number, n: any) => sum + (n.cost || 0),
         0
       );
-      const nodeCount = nodes.length;
-
-      return {
-        ...trace,
-        cost: totalCost,
-        nodeCount: nodeCount,
-      };
+      return { ...trace, cost: totalCost, nodeCount: nodes.length };
     });
 
     res.json({
-      traces: enhancedTraces || [], // ← Ensure it's always an array
+      traces: enhancedTraces || [],
       total: (enhancedTraces || []).length,
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error listing traces:', error);
-    res.status(500).json({
-      error: 'Failed to list traces',
-      message: (error as Error).message,
-    });
+    res
+      .status(500)
+      .json({ error: 'Failed to list traces', message: error.message });
   }
 });
 
-/**
- * GET /api/traces/:traceId - Get specific trace with enhanced node data
- */
 app.get('/api/traces/:traceId', (req, res) => {
   try {
     const { traceId } = req.params;
     const trace = TraceModel.findById(traceId);
+    if (!trace) return res.status(404).json({ error: 'Trace not found' });
 
-    if (!trace) {
-      return res.status(404).json({ error: 'Trace not found' });
-    }
-
-    // Get nodes from the nodes table
     const nodes = NodeModel.findByTraceId(traceId).map((node) => {
       const data =
         typeof node.data === 'string' ? JSON.parse(node.data) : node.data;
@@ -405,46 +323,13 @@ app.get('/api/traces/:traceId', (req, res) => {
       };
     });
 
-    // Create edges based on parent-child relationships
-    // Map run_id to node id for React Flow
     const runIdToNodeId = new Map(nodes.map((n) => [n.runId, n.id]));
-    console.log(`[DEBUG] nodes array length: ${nodes.length}`);
-    console.log(
-      `[DEBUG] First 3 nodes:`,
-      nodes.slice(0, 3).map((n) => ({ id: n.id, runId: n.runId, type: n.type }))
-    );
-    console.log(`[DEBUG] runIdToNodeId map size: ${runIdToNodeId.size}`);
-    console.log(
-      `[DEBUG] First 3 map entries:`,
-      Array.from(runIdToNodeId.entries()).slice(0, 3)
-    );
-
     const edgesFromDB = EdgeModel.findByTraceId(traceId);
-    console.log(`[DEBUG] edges from DB: ${edgesFromDB.length}`);
-    if (edgesFromDB.length > 0) {
-      console.log(`[DEBUG] First edge:`, edgesFromDB[0]);
-      console.log(
-        `[DEBUG] Lookup from_node in map:`,
-        runIdToNodeId.get(edgesFromDB[0].fromNode)
-      );
-      console.log(
-        `[DEBUG] Lookup to_node in map:`,
-        runIdToNodeId.get(edgesFromDB[0].toNode)
-      );
-    }
-
     const edges = edgesFromDB
       .map((edge) => {
         const sourceNodeId = runIdToNodeId.get(edge.fromNode);
         const targetNodeId = runIdToNodeId.get(edge.toNode);
-
-        if (!sourceNodeId || !targetNodeId) {
-          console.log(
-            `[DEBUG] Mapping failed for edge ${edge.id}: from=${edge.fromNode} (found: ${sourceNodeId}) to=${edge.toNode} (found: ${targetNodeId})`
-          );
-          return null;
-        }
-
+        if (!sourceNodeId || !targetNodeId) return null;
         return {
           id: edge.id,
           source: sourceNodeId,
@@ -453,31 +338,21 @@ app.get('/api/traces/:traceId', (req, res) => {
           animated: false,
         };
       })
-      .filter((edge) => edge !== null);
+      .filter((e) => e !== null) as any[];
 
-    console.log(
-      `[DEBUG] Successfully mapped ${edges.length} out of ${edgesFromDB.length} edges`
+    const anomalies = detectSimpleAnomalies(nodes as any[], edges);
+
+    const sortedNodes = (nodes as any[]).sort(
+      (a, b) => a.startTime - b.startTime
     );
-
-    // Run anomaly detection
-    const anomalies = detectSimpleAnomalies(nodes, edges);
-
-    // Sort nodes by start time
-    const sortedNodes = nodes.sort((a, b) => a.startTime - b.startTime);
-
-    // Enhance nodes with frontend-compatible fields
     const enhancedNodes = sortedNodes.map((node, index) => {
       const position = calculateNodePosition(index);
       const label = generateNodeLabel(node, index);
-
       return {
-        // Core fields
-        id: node.id, // Use event ID as the display ID
-        label: label,
+        id: node.id,
+        label,
         type: node.type,
         status: node.status,
-
-        // Metrics
         cost: calculateCost(node),
         latency: node.latency || 0,
         tokens: node.tokens
@@ -489,17 +364,11 @@ app.get('/api/traces/:traceId', (req, res) => {
                 (node.tokens.input || 0) + (node.tokens.output || 0),
             }
           : estimateTokensFromContent(node),
-
-        // Timing
         timestamp: node.startTime,
         startTime: node.startTime,
         endTime: node.endTime,
-
-        // Graph layout
         x: position.x,
         y: position.y,
-
-        // Type-specific data
         prompts: node.prompts,
         response: node.response,
         reasoning: node.reasoning,
@@ -511,49 +380,41 @@ app.get('/api/traces/:traceId', (req, res) => {
         chainInputs: node.chainInputs,
         chainOutputs: node.chainOutputs,
         agentActions: node.agentActions,
-
-        // Relationships
         parentRunId: node.parentRunId,
-
-        // Error info
         error: node.error,
-
-        // Anomaly detection
         hasLoop: anomalies.some(
           (a) => a.type === 'loop' && a.affectedNodes?.includes(node.runId)
         ),
       };
     });
 
-    // Calculate trace latency
     const latency = calculateTraceLatency(trace);
-
-    // Enhanced trace object
-    const totalCost = nodes.reduce((sum, node) => sum + (node.cost || 0), 0);
+    const totalCost = nodes.reduce((sum, n: any) => sum + (n.cost || 0), 0);
 
     const enhancedTrace = {
       ...trace,
       project: trace.projectName || 'default',
       timestamp: trace.startTime,
-      nodeCount: trace.totalNodes || nodes.length,
+      nodeCount: (trace as any).totalNodes || nodes.length,
       cost: totalCost,
-      latency: latency,
-      description: generateTraceDescription(trace, nodes),
+      latency,
+      description: generateTraceDescription(trace, nodes as any[]),
     };
 
     res.json({
       trace: enhancedTrace,
       nodes: enhancedNodes,
-      edges: edges,
-      anomalies: anomalies,
+      edges,
+      anomalies,
       stats: {
         totalNodes: nodes.length,
-        totalCost: nodes.reduce((sum, node) => sum + (node.cost || 0), 0),
+        totalCost,
         totalLatency: latency,
-        llmCount: nodes.filter((n) => n.type.includes('llm')).length,
-        toolCount: nodes.filter((n) => n.type.includes('tool')).length,
-        chainCount: nodes.filter((n) => n.type.includes('chain')).length,
-        errorCount: nodes.filter((n) => n.status === 'error').length,
+        llmCount: enhancedNodes.filter((n) => n.type.includes('llm')).length,
+        toolCount: enhancedNodes.filter((n) => n.type.includes('tool')).length,
+        chainCount: enhancedNodes.filter((n) => n.type.includes('chain'))
+          .length,
+        errorCount: enhancedNodes.filter((n) => n.status === 'error').length,
         anomalyCount: anomalies.length,
       },
     });
@@ -563,24 +424,16 @@ app.get('/api/traces/:traceId', (req, res) => {
   }
 });
 
-/**
- * GET /api/traces/:traceId/events - Get events for a trace
- */
 app.get('/api/traces/:traceId/events', (req, res) => {
   try {
     const { traceId } = req.params;
     const trace = TraceModel.findById(traceId);
-
-    if (!trace) {
-      return res.status(404).json({ error: 'Trace not found' });
-    }
+    if (!trace) return res.status(404).json({ error: 'Trace not found' });
 
     const nodes = NodeModel.findByTraceId(traceId);
-
-    // Convert nodes to event format
     const events = nodes.map((node) => ({
       eventId: node.runId,
-      traceId: traceId,
+      traceId,
       type: node.type,
       status: node.status,
       timestamp: node.startTime,
@@ -589,7 +442,6 @@ app.get('/api/traces/:traceId/events', (req, res) => {
       tokens: node.tokens,
       data: node.data,
     }));
-
     res.json({ events });
   } catch (error) {
     console.error('Error getting events:', error);
@@ -597,21 +449,11 @@ app.get('/api/traces/:traceId/events', (req, res) => {
   }
 });
 
-/**
- * GET /api/stats - Get overall statistics
- */
-app.get('/api/stats', (req, res) => {
+app.get('/api/stats', (_req, res) => {
   try {
     const traces = TraceModel.list({ limit: 1000, offset: 0 });
-
-    const totalCost = traces.reduce((sum, trace) => {
-      return sum + (trace.totalCost || 0);
-    }, 0);
-
-    const totalNodes = traces.reduce((sum, trace) => {
-      return sum + (trace.totalNodes || 0);
-    }, 0);
-
+    const totalCost = traces.reduce((sum, t) => sum + (t.totalCost || 0), 0);
+    const totalNodes = traces.reduce((sum, t) => sum + (t.totalNodes || 0), 0);
     const completedTraces = traces.filter(
       (t) => t.status === 'complete'
     ).length;
@@ -625,8 +467,8 @@ app.get('/api/stats', (req, res) => {
       failedTraces,
       totalCost,
       totalNodes,
-      averageCostPerTrace: traces.length > 0 ? totalCost / traces.length : 0,
-      averageNodesPerTrace: traces.length > 0 ? totalNodes / traces.length : 0,
+      averageCostPerTrace: traces.length ? totalCost / traces.length : 0,
+      averageNodesPerTrace: traces.length ? totalNodes / traces.length : 0,
     });
   } catch (error) {
     console.error('Error getting stats:', error);
@@ -634,33 +476,25 @@ app.get('/api/stats', (req, res) => {
   }
 });
 
-/**
- * GET /api/projects - Get list of all projects
- */
-app.get('/api/projects', (req, res) => {
+app.get('/api/projects', (_req, res) => {
   try {
     const traces = TraceModel.list({ limit: 1000, offset: 0 });
-
-    // Extract unique project names
     const projects = [
       ...new Set(traces.map((t) => t.projectName || 'default')),
     ];
 
-    // Get stats for each project
     const projectStats = projects.map((project) => {
       const projectTraces = traces.filter(
         (t) => (t.projectName || 'default') === project
       );
-
       const totalCost = projectTraces.reduce(
         (sum, t) => sum + (t.totalCost || 0),
         0
       );
-
       return {
         name: project,
         traceCount: projectTraces.length,
-        totalCost: totalCost,
+        totalCost,
         lastActivity: Math.max(...projectTraces.map((t) => t.startTime)),
       };
     });
@@ -672,378 +506,169 @@ app.get('/api/projects', (req, res) => {
   }
 });
 
-// ============================================================================
-// HELPER FUNCTIONS
-// ============================================================================
-
-/**
- * Map OpenAI event types to standard trace event types
- */
-function mapOpenAIEventType(openaiType: string): string {
-  switch (openaiType) {
-    case 'function_call_start':
-      return 'llm_start';
-    case 'function_call_end':
-      return 'llm_end';
-    case 'tool_selection':
-      return 'tool_start';
-    case 'conversation_turn':
-      return 'llm_end';
-    case 'error':
-      return 'error';
-    default:
-      return 'custom';
-  }
-}
-
-// ============================================================================
-// SOCKET.IO CONNECTION HANDLING
-// ============================================================================
-
+// ─────────────────────────────────────────────────────────────────────────────
+/** SOCKET.IO CONNECTION HANDLING */
+// ─────────────────────────────────────────────────────────────────────────────
 io.on('connection', (socket) => {
   console.log(`✅ Client connected: ${socket.id}`);
 
-  // Get auth info
-  const { apiKey, projectName } = socket.handshake.auth;
-  console.log(`   Project: ${projectName || 'default'}`);
-
-  // Handle trace events
-  socket.on('trace_events', (events: TraceEvent[]) => {
-    try {
-      // Validate events
-      if (!Array.isArray(events) || events.length === 0) {
-        console.error('❌ Invalid events received');
-        return;
-      }
-
-      console.log(`📥 Received ${events.length} events from ${socket.id}`);
-
-      // Process each event using the new trace processor
-      for (const event of events) {
-        traceProcessor.processEvent(event);
-        // Broadcast to dashboard clients (for real-time updates)
-        io.to(`trace:${event.traceId}`).emit('new_event', event);
-      }
-
-      // Also broadcast to project room for project-wide updates
-      if (projectName) {
-        io.to(`project:${projectName}`).emit('trace_update', {
-          traceId: events[0]?.traceId,
-          eventCount: events.length,
-          timestamp: Date.now(),
-        });
-      }
-
-      // Acknowledge receipt
-      socket.emit('events_received', {
-        count: events.length,
-        timestamp: Date.now(),
-      });
-    } catch (error) {
-      console.error('❌ Error processing events:', error);
-      socket.emit('error', { message: 'Failed to process events' });
-    }
-  });
-
-  // Handle OpenAI events
-  socket.on('openai_events', async (data: any) => {
-    try {
-      const { traceId, projectName, events, metadata } = data;
-
-      console.log(
-        `📥 Received ${events.length} OpenAI events from ${socket.id} for trace: ${traceId}`
-      );
-
-      // Convert OpenAI events to standard trace events
-      const traceEvents: TraceEvent[] = events.map((event: any) => ({
-        eventId: event.eventId,
-        traceId: event.traceId,
-        runId: event.eventId, // Use eventId as runId for OpenAI events
-        type: mapOpenAIEventType(event.type),
-        timestamp: event.timestamp,
-        data: event.data,
-        metadata: {
-          projectName,
-          ...metadata,
-          ...event.metadata,
-        },
-      }));
-
-      // Process the converted events
-      for (const event of traceEvents) {
-        traceProcessor.processEvent(event);
-
-        // Broadcast to dashboard clients
-        io.to(`trace:${event.traceId}`).emit('trace_update', {
-          traceId: event.traceId,
-          event,
-        });
-      }
-
-      // Send acknowledgment
-      socket.emit('openai_events_ack', {
-        received: events.length,
-        timestamp: Date.now(),
-      });
-    } catch (error) {
-      console.error('❌ Error handling OpenAI events:', error);
-      socket.emit('openai_events_error', {
-        error: 'Failed to process OpenAI events',
-      });
-    }
-  });
-
-  // Join trace room (for dashboard to receive updates)
-  socket.on('watch_trace', (traceId: string) => {
+  // Normalize watch_trace payload (accepts {traceId} or "traceId")
+  socket.on('watch_trace', (arg: { traceId?: string } | string) => {
+    const traceId = typeof arg === 'string' ? arg : arg?.traceId;
+    if (!traceId) return;
     socket.join(`trace:${traceId}`);
     console.log(`👀 Client ${socket.id} watching trace: ${traceId}`);
 
-    // Send existing trace data
     try {
       const trace = TraceModel.findById(traceId);
-      if (trace) {
-        // Get nodes from the nodes table
-        const nodes = NodeModel.findByTraceId(traceId);
-        const edges = EdgeModel.findByTraceId(traceId);
+      if (!trace) return;
+      const nodes = NodeModel.findByTraceId(traceId);
+      const edges = EdgeModel.findByTraceId(traceId);
 
-        if (nodes.length === 0) {
-          socket.emit('trace_data', {
-            trace,
-            nodes: [],
-            edges: [],
-            anomalies: [],
-            stats: {
-              totalNodes: 0,
-              totalCost: 0,
-              totalLatency: 0,
-              llmCount: 0,
-              toolCount: 0,
-              chainCount: 0,
-              errorCount: 0,
-              anomalyCount: 0,
-            },
-          });
-          return;
-        }
-
-        // Transform nodes for frontend (same logic as API endpoint)
-        const sortedNodes = nodes.map((node: any) => {
-          const data =
-            typeof node.data === 'string' ? JSON.parse(node.data) : node.data;
-          return {
-            id: node.id,
-            type: node.type,
-            status: node.status,
-            startTime: node.startTime,
-            endTime: node.endTime,
-            model: node.model || data.model || 'unknown',
-            latency: node.latency || 0,
-            runId: node.runId,
-            parentRunId: node.parentRunId,
-            prompts: data.prompts || [],
-            response: data.response || '',
-            reasoning: data.reasoning || '',
-            toolName: data.toolName || '',
-            toolInput: data.toolInput || '',
-            toolOutput: data.toolOutput || '',
-            chainName: data.chainName || '',
-            chainInputs: data.inputs || '',
-            chainOutputs: data.outputs || '',
-            agentActions: data.agentActions || [],
-            metadata: data.metadata || {},
-            tokens:
-              typeof node.tokens === 'string'
-                ? JSON.parse(node.tokens)
-                : node.tokens,
-            cost: node.cost || 0,
-            error: node.error,
-          };
-        });
-
-        // Calculate positions for nodes
-        const calculateNodePosition = (index: number) => ({
-          x: (index % 3) * 300 + 100,
-          y: Math.floor(index / 3) * 200 + 100,
-        });
-
-        // Generate node labels
-        const generateNodeLabel = (node: any, index: number): string => {
-          const stepNumber = index + 1;
-          switch (node.type) {
-            case 'llm_start':
-              return 'LLM Processing';
-            case 'llm_end':
-              return 'LLM Response';
-            case 'tool_start':
-              if (node.toolName) {
-                return `${node.toolName} Call`;
-              }
-              return 'Tool Execution';
-            case 'tool_end':
-              if (node.toolName) {
-                return `${node.toolName} Result`;
-              }
-              return 'Tool Complete';
-            case 'chain_start':
-              return 'Process Start';
-            case 'chain_end':
-              return 'Process Complete';
-            default:
-              return `Step ${stepNumber}`;
-          }
-        };
-
-        // Calculate cost
-        const calculateCost = (node: any): number => {
-          if (node.cost) return node.cost;
-          const tokens = node.tokens;
-          if (!tokens) return 0;
-          const inputCostPer1k = 0.0015;
-          const outputCostPer1k = 0.002;
-          const inputCost = ((tokens.input || 0) / 1000) * inputCostPer1k;
-          const outputCost = ((tokens.output || 0) / 1000) * outputCostPer1k;
-          return inputCost + outputCost;
-        };
-
-        // Estimate tokens from content
-        const estimateTokensFromContent = (
-          node: any
-        ): { input: number; output: number; total: number } | undefined => {
-          let inputTokens = 0;
-          let outputTokens = 0;
-          if (node.prompt) inputTokens = Math.ceil(node.prompt.length / 4);
-          if (node.response) outputTokens = Math.ceil(node.response.length / 4);
-          if (node.toolInput)
-            inputTokens += Math.ceil(node.toolInput.length / 4);
-          if (node.toolOutput)
-            outputTokens += Math.ceil(node.toolOutput.length / 4);
-          if (inputTokens > 0 || outputTokens > 0) {
-            return {
-              input: inputTokens,
-              output: outputTokens,
-              total: inputTokens + outputTokens,
-            };
-          }
-          return undefined;
-        };
-
-        // Transform to enhanced nodes
-        const enhancedNodes = sortedNodes.map((node, index) => {
-          const position = calculateNodePosition(index);
-          const label = generateNodeLabel(node, index);
-          return {
-            id: node.id,
-            label: label,
-            type: node.type,
-            status: node.status,
-            cost: calculateCost(node),
-            latency: node.latency || 0,
-            tokens: node.tokens || estimateTokensFromContent(node),
-            timestamp: node.startTime,
-            startTime: node.startTime,
-            endTime: node.endTime,
-            x: position.x,
-            y: position.y,
-            prompts: node.prompts,
-            response: node.response,
-            reasoning: node.reasoning,
-            model: node.model || 'unknown',
-            toolName: node.toolName,
-            toolInput: node.toolInput,
-            toolOutput: node.toolOutput,
-            chainName: node.chainName || node.metadata?.chainName || 'unknown',
-            chainInputs: node.chainInputs,
-            chainOutputs: node.chainOutputs,
-            agentActions: node.agentActions,
-            parentRunId: node.parentRunId,
-            error: node.error,
-            hasLoop: false,
-          };
-        });
-
-        // Create edges - map run_id to node id for React Flow
-        const runIdToNodeId = new Map(
-          sortedNodes.map((n: any) => [n.runId, n.id])
-        );
-        const edgesData = EdgeModel.findByTraceId(traceId)
-          .map((edge: any) => {
-            const sourceNodeId = runIdToNodeId.get(edge.fromNode);
-            const targetNodeId = runIdToNodeId.get(edge.toNode);
-
-            if (!sourceNodeId || !targetNodeId) {
-              return null;
-            }
-
-            return {
-              id: edge.id,
-              source: sourceNodeId,
-              target: targetNodeId,
-              type: 'smoothstep',
-              animated: false,
-            };
-          })
-          .filter((edge: any) => edge !== null);
-
-        // Calculate stats
-        const totalCost = enhancedNodes.reduce(
-          (sum, node) => sum + (node.cost || 0),
-          0
-        );
-        const totalLatency = enhancedNodes.reduce(
-          (sum, node) => sum + (node.latency || 0),
-          0
-        );
-        const llmCount = enhancedNodes.filter((n) =>
-          n.type.includes('llm')
-        ).length;
-        const toolCount = enhancedNodes.filter((n) =>
-          n.type.includes('tool')
-        ).length;
-        const chainCount = enhancedNodes.filter((n) =>
-          n.type.includes('chain')
-        ).length;
-        const errorCount = enhancedNodes.filter(
-          (n) => n.status === 'error'
-        ).length;
-
-        socket.emit('trace_data', {
-          trace,
-          nodes: enhancedNodes,
-          edges: edgesData,
-          anomalies: [],
-          stats: {
-            totalNodes: enhancedNodes.length,
-            totalCost,
-            totalLatency,
-            llmCount,
-            toolCount,
-            chainCount,
-            errorCount,
-            anomalyCount: 0,
-          },
-        });
-      } else {
-        socket.emit('error', { message: 'Trace not found' });
-      }
-    } catch (error) {
-      console.error(`Error sending trace data for ${traceId}:`, error);
-      socket.emit('error', { message: 'Failed to load trace data' });
+      socket.emit('trace_data', {
+        trace,
+        nodes: nodes ?? [],
+        edges: edges ?? [],
+        anomalies: [],
+        stats: {
+          totalNodes: nodes?.length ?? 0,
+          totalCost: 0,
+          totalLatency: 0,
+          llmCount: 0,
+          toolCount: 0,
+          chainCount: 0,
+          errorCount: 0,
+          anomalyCount: 0,
+        },
+      });
+    } catch (e) {
+      console.error('Failed to send initial trace snapshot:', e);
     }
   });
 
-  // Leave trace room
+  // LLM Replay via Socket.IO
+  socket.on('replay_llm_request', async (payload: ReplayLLMRequest) => {
+    console.log('🎯 replay_llm_request', {
+      requestId: payload?.requestId,
+      model: payload?.model,
+      msgCount: payload?.messages?.length,
+    });
+    let {
+      requestId,
+      traceId,
+      model = 'gpt-4o-mini',
+      messages,
+      temperature = 0.7,
+      maxTokens = 512,
+      stream = false,
+    } = payload || ({} as ReplayLLMRequest);
+
+    const MODEL_MAP: Record<string, string> = {
+      'gpt-3.5-turbo': 'gpt-4o-mini',
+      'gpt-3.5-turbo-0125': 'gpt-4o-mini',
+      'gpt-4': 'gpt-4o-mini',
+    };
+    model = MODEL_MAP[model] ?? model;
+    console.log('🧪 normalized model:', model);
+
+    const fail = (msg: string) => {
+      console.error('❌ replay_llm_request error:', { requestId, model, msg });
+      socket.emit('replay_llm_response', { requestId, ok: false, error: msg });
+    };
+
+    try {
+      if (!model || !Array.isArray(messages))
+        return fail('model and messages are required');
+      if (!process.env.OPENAI_API_KEY)
+        return fail('OPENAI_API_KEY is not set on backend');
+
+      if (!stream) {
+        const resp = await openai.chat.completions.create({
+          model,
+          messages,
+          temperature,
+          max_tokens: maxTokens,
+        });
+        const text =
+          resp.choices?.[0]?.message?.content ??
+          resp.choices?.[0]?.delta?.content ??
+          '';
+
+        socket.emit('replay_llm_response', {
+          requestId,
+          ok: true,
+          text,
+          timestamp: Date.now(),
+        });
+        console.log('✅ replay_llm_response (oneshot)', {
+          requestId,
+          length: text.length,
+        });
+
+        if (traceId) {
+          io.to(`trace:${traceId}`).emit('replay_llm_result', {
+            traceId,
+            text,
+            timestamp: Date.now(),
+          });
+        }
+        return;
+      }
+
+      // streaming mode
+      const streamResp = await openai.chat.completions.create({
+        model,
+        messages,
+        temperature,
+        max_tokens: maxTokens,
+        stream: true,
+      });
+
+      let full = '';
+      for await (const chunk of streamResp) {
+        const delta = chunk.choices?.[0]?.delta?.content ?? '';
+        if (delta) {
+          full += delta;
+          socket.emit('replay_llm_delta', { requestId, delta });
+        }
+      }
+
+      socket.emit('replay_llm_response', {
+        requestId,
+        ok: true,
+        text: full,
+        timestamp: Date.now(),
+      });
+      console.log('✅ replay_llm_response (streamed)', {
+        requestId,
+        length: full.length,
+      });
+
+      if (traceId) {
+        io.to(`trace:${traceId}`).emit('replay_llm_result', {
+          traceId,
+          text: full,
+          timestamp: Date.now(),
+        });
+      }
+    } catch (err: any) {
+      console.error('replay_llm_request error:', err);
+      fail(err?.message || 'LLM call failed');
+    }
+  });
+
+  // (you can add your trace_events / openai_events handlers here)
+
   socket.on('unwatch_trace', (traceId: string) => {
     socket.leave(`trace:${traceId}`);
     console.log(`👋 Client ${socket.id} stopped watching trace: ${traceId}`);
   });
 
-  // Join project room (for project-wide updates)
   socket.on('watch_project', (projectName: string) => {
     socket.join(`project:${projectName}`);
     console.log(`👀 Client ${socket.id} watching project: ${projectName}`);
   });
 
-  // Leave project room
   socket.on('unwatch_project', (projectName: string) => {
     socket.leave(`project:${projectName}`);
     console.log(
@@ -1051,38 +676,19 @@ io.on('connection', (socket) => {
     );
   });
 
-  // Handle disconnection
   socket.on('disconnect', () => {
     console.log(`❌ Client disconnected: ${socket.id}`);
   });
 
-  // Handle errors
   socket.on('error', (error) => {
     console.error(`❌ Socket error from ${socket.id}:`, error);
   });
 });
 
-// ============================================================================
-// CLEANUP & MAINTENANCE
-// ============================================================================
-
-// Cleanup old traces every hour (optional - remove if you want to keep all data)
-// setInterval(() => {
-//   try {
-//     // Delete traces older than 7 days
-//     const cutoffTime = Date.now() - (7 * 24 * 60 * 60 * 1000);
-//     // Implement cleanup logic here
-//     console.log('🧹 Cleaned up old traces');
-//   } catch (error) {
-//     console.error('Error during cleanup:', error);
-//   }
-// }, 60 * 60 * 1000);
-
-// ============================================================================
+// ─────────────────────────────────────────────────────────────────────────────
 // START SERVER
-// ============================================================================
-
-const PORT = process.env.PORT || 3000;
+// ─────────────────────────────────────────────────────────────────────────────
+const PORT = process.env.PORT || 3001;
 
 httpServer.listen(PORT, () => {
   console.log(`

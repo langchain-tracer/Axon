@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "wait-on tcp:3001 && vite",
     "build": "vite build",
     "preview": "vite preview",
     "test": "vitest"
@@ -17,7 +17,8 @@
     "react-dom": "^18.2.0",
     "reactflow": "^11.11.4",
     "recharts": "^2.10.0",
-    "socket.io-client": "^4.8.1"
+    "socket.io-client": "^4.8.1",
+    "uuid": "^13.0.0"
   },
   "devDependencies": {
     "@types/d3": "^7.4.3",

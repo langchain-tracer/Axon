@@ -52,3 +52,10 @@ DEBUG_*.md
 # Test outputs
 coverage/
 .nyc_output/
+node_modules
+node_modules
+node_modules
+node_modules
+node_modules
+node_modules
+node_modules
