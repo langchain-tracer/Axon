@@ -519,6 +519,18 @@ io.on('connection', (socket) => {
     socket.join(`trace:${traceId}`);
     console.log(`👀 Client ${socket.id} watching trace: ${traceId}`);
 
+    socket.on('replay_request', async (payload) => {
+  console.log('🎬 Received replay_request:', payload);
+  try {
+    const { nodeId, traceId } = payload;
+    const result = await performReplay(traceId, nodeId, payload);
+    socket.emit('replay_result', { success: true, result });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    socket.emit('replay_result', { success: false, error: message });
+  }
+});
+
     try {
       const trace = TraceModel.findById(traceId);
       if (!trace) return;
@@ -547,74 +559,21 @@ io.on('connection', (socket) => {
   });
 
   // LLM Replay via Socket.IO
-  socket.on('replay_llm_request', async (payload: ReplayLLMRequest) => {
-    console.log('🎯 replay_llm_request', {
-      requestId: payload?.requestId,
-      model: payload?.model,
-      msgCount: payload?.messages?.length,
-    });
-    let {
-      requestId,
-      traceId,
-      model = 'gpt-4o-mini',
-      messages,
-      temperature = 0.7,
-      maxTokens = 512,
-      stream = false,
-    } = payload || ({} as ReplayLLMRequest);
+  // …inside io.on('connection', (socket) => { …
+socket.on('replay_llm_request', async (payload: any) => {
+  const requestId = payload?.requestId;
+  const traceId = payload?.traceId;
+  const model = payload?.model || 'gpt-4o-mini';
+  const messages = payload?.messages || [];
+  const temperature =
+    typeof payload?.temperature === 'number' ? payload.temperature : 0.0;
+  const maxTokens =
+    typeof payload?.maxTokens === 'number' ? payload.maxTokens : 150;
+  const stream = payload?.stream === true;
+  const start = Date.now(); // track latency start
 
-    const MODEL_MAP: Record<string, string> = {
-      'gpt-3.5-turbo': 'gpt-4o-mini',
-      'gpt-3.5-turbo-0125': 'gpt-4o-mini',
-      'gpt-4': 'gpt-4o-mini',
-    };
-    model = MODEL_MAP[model] ?? model;
-    console.log('🧪 normalized model:', model);
-
-    const fail = (msg: string) => {
-      console.error('❌ replay_llm_request error:', { requestId, model, msg });
-      socket.emit('replay_llm_response', { requestId, ok: false, error: msg });
-    };
-
-    try {
-      if (!model || !Array.isArray(messages))
-        return fail('model and messages are required');
-      if (!process.env.OPENAI_API_KEY)
-        return fail('OPENAI_API_KEY is not set on backend');
-
-      if (!stream) {
-        const resp = await openai.chat.completions.create({
-          model,
-          messages,
-          temperature,
-          max_tokens: maxTokens,
-        });
-        const text =
-          resp.choices?.[0]?.message?.content ??
-          resp.choices?.[0]?.delta?.content ??
-          '';
-
-        socket.emit('replay_llm_response', {
-          requestId,
-          ok: true,
-          text,
-          timestamp: Date.now(),
-        });
-        console.log('✅ replay_llm_response (oneshot)', {
-          requestId,
-          length: text.length,
-        });
-
-        if (traceId) {
-          io.to(`trace:${traceId}`).emit('replay_llm_result', {
-            traceId,
-            text,
-            timestamp: Date.now(),
-          });
-        }
-        return;
-      }
-
+  try {
+    if (stream) {
       // streaming mode
       const streamResp = await openai.chat.completions.create({
         model,
@@ -651,11 +610,71 @@ io.on('connection', (socket) => {
           timestamp: Date.now(),
         });
       }
-    } catch (err: any) {
-      console.error('replay_llm_request error:', err);
-      fail(err?.message || 'LLM call failed');
+
+      const end = Date.now();
+      socket.emit('replay_result', {
+        requestId,
+        success: true,
+        executedNodes: payload?.startNodeId ? [payload.startNodeId] : [],
+        skippedNodes: [],
+        totalCost: 0,
+        totalLatency: end - start,
+        sideEffects: [],
+        newTraceId: null,
+      });
+    } else {
+      // non-streaming mode
+      const resp = await openai.chat.completions.create({
+        model,
+        messages,
+        temperature,
+        max_tokens: maxTokens,
+      });
+
+      const finalText =
+        resp.choices?.[0]?.message?.content ?? '';
+
+      socket.emit('replay_llm_response', {
+        requestId,
+        text: finalText,
+        timestamp: Date.now(),
+      });
+
+      const end = Date.now();
+      socket.emit('replay_result', {
+        requestId,
+        success: true,
+        executedNodes: payload?.startNodeId ? [payload.startNodeId] : [],
+        skippedNodes: [],
+        totalCost: 0,
+        totalLatency: end - start,
+        sideEffects: [],
+        newTraceId: null,
+      });
+
+      if (traceId) {
+        io.to(`trace:${traceId}`).emit('replay_llm_result', {
+          traceId,
+          text: finalText,
+          timestamp: Date.now(),
+        });
+      }
     }
-  });
+  } catch (err: any) {
+    console.error('replay_llm_request error:', err);
+    socket.emit('replay_result', {
+      requestId,
+      success: false,
+      executedNodes: [],
+      skippedNodes: [],
+      totalCost: 0,
+      totalLatency: 0,
+      sideEffects: [],
+      newTraceId: null,
+      error: err?.message || 'Replay failed',
+    });
+  }
+});
 
   // (you can add your trace_events / openai_events handlers here)
 
@@ -705,3 +724,134 @@ httpServer.listen(PORT, () => {
 });
 
 export { app, io, httpServer };
+  async function performReplay(traceId: any, nodeId: any, payload: any) {
+    // Load trace + raw DB rows
+    const trace = TraceModel.findById(traceId);
+    if (!trace) throw new Error('Trace not found');
+
+    const rawNodes = NodeModel.findByTraceId(traceId) || [];
+    const rawEdges = EdgeModel.findByTraceId(traceId) || [];
+
+    // Normalize nodes (similar to /api/traces/:traceId mapping)
+    const nodes = rawNodes.map((n: any) => {
+      const data = typeof n.data === 'string' ? JSON.parse(n.data || '{}') : n.data || {};
+      const tokens = typeof n.tokens === 'string' ? JSON.parse(n.tokens || '{}') : n.tokens || {};
+      return {
+        id: n.id,
+        runId: n.runId,
+        parentRunId: n.parentRunId,
+        type: n.type,
+        status: n.status,
+        startTime: n.startTime,
+        endTime: n.endTime,
+        model: n.model || data.model || 'unknown',
+        cost: n.cost || 0,
+        latency: n.latency || 0,
+        tokens,
+        prompts: data.prompts || [],
+        response: data.response || '',
+        reasoning: data.reasoning || '',
+        toolName: data.toolName || data.toolName || '',
+        toolInput: data.toolInput || data.toolInput || '',
+        toolOutput: data.toolOutput || data.toolOutput || '',
+        chainName: data.chainName || data.metadata?.chainName || '',
+        chainInputs: data.inputs || '',
+        chainOutputs: data.outputs || '',
+        agentActions: data.agentActions || [],
+        metadata: data.metadata || {},
+        raw: n,
+      };
+    });
+
+    // Build quick lookup maps
+    const runIdToNode = new Map<string, any>(nodes.map((n: any) => [n.runId, n]));
+    const idToNode = new Map<string, any>(nodes.map((n: any) => [n.id, n]));
+
+    // Determine starting runId (accept either node.id or node.runId)
+    let startNode = idToNode.get(nodeId) || runIdToNode.get(nodeId);
+    if (!startNode) {
+      // fallback: if nodeId not provided, start from earliest node by startTime
+      if (!nodeId) {
+        startNode = nodes.slice().sort((a: any, b: any) => (a.startTime || 0) - (b.startTime || 0))[0];
+      }
+      if (!startNode) throw new Error('Start node not found for replay');
+    }
+    const startRunId = startNode.runId;
+
+    // Build adjacency from edges (edges store runIds)
+    const adj = new Map<string, string[]>();
+    for (const e of rawEdges) {
+      const from = e.fromNode;
+      const to = e.toNode;
+      if (!adj.has(from)) adj.set(from, []);
+      adj.get(from)!.push(to);
+    }
+
+    // DFS/BFS to collect downstream runIds (avoid infinite loops)
+    const visited = new Set<string>();
+    const runIdsToExecute: string[] = [];
+
+    const stack = [startRunId];
+    while (stack.length) {
+      const current = stack.pop()!;
+      if (!current || visited.has(current)) continue;
+      visited.add(current);
+      const node = runIdToNode.get(current);
+      if (node) runIdsToExecute.push(current);
+      const neighbors = adj.get(current) || [];
+      for (const nb of neighbors) {
+        if (!visited.has(nb)) stack.push(nb);
+      }
+    }
+
+    // Map runIds to node ids and compute metrics
+    const executedNodes = runIdsToExecute
+      .map((rid) => runIdToNode.get(rid))
+      .filter(Boolean)
+      .map((n: any) => n.id);
+
+    const skippedNodes = nodes
+      .map((n: any) => n.id)
+      .filter((id) => !executedNodes.includes(id));
+
+    // Compute total cost and latency (use calculateCost helper where useful)
+    let totalCost = 0;
+    let totalLatency = 0;
+    const sideEffects: any[] = [];
+
+    for (const rid of runIdsToExecute) {
+      const n = runIdToNode.get(rid);
+      if (!n) continue;
+      const cost = n.cost || calculateCost(n) || 0;
+      totalCost += cost;
+      const latency =
+        n.latency ||
+        (n.endTime && n.startTime ? Math.max(0, n.endTime - n.startTime) : 0);
+      totalLatency += latency;
+
+      if (n.toolOutput || (n.agentActions && n.agentActions.length)) {
+        sideEffects.push({
+          nodeId: n.id,
+          type: n.toolOutput ? 'tool_output' : 'agent_action',
+          toolName: n.toolName,
+          toolInput: n.toolInput,
+          toolOutput: n.toolOutput,
+          agentActions: n.agentActions,
+        });
+      }
+    }
+
+    // Optionally one could create a new trace representing the replay run.
+    // For now return a summary and null newTraceId (caller can decide to persist).
+    return {
+      executedNodes,
+      skippedNodes,
+      totalCost,
+      totalLatency,
+      sideEffects,
+      newTraceId: null,
+      startTraceId: traceId,
+      startNodeId: startNode.id,
+    };
+  }
+

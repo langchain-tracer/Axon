@@ -16,6 +16,14 @@ import type {
   FilterCriteria,
 } from '../types';
 
+// ---- Socket singleton (shared by hooks) ------------------------------------
+const replaySocket: Socket = io('/', {
+  path: '/socket.io',
+  transports: ['websocket'],
+  auth: { projectName: 'dashboard' },
+  reconnectionAttempts: 5,
+  reconnectionDelay: 2000,
+});
 
 // ============================================================================
 // useTraceData - Fetch and manage trace data
@@ -169,6 +177,7 @@ export const useRealtimeUpdates = (traceId: string | null) => {
 
   return { connected, lastUpdate };
 };
+
 // ============================================================================
 // useKeyboardShortcuts - Handle keyboard shortcuts
 // ============================================================================
@@ -451,84 +460,43 @@ import {
   type ReplayModifications,
 } from '../utils/ReplayEngine';
 
-// export const useReplay = (
-//   replayEngine: ReplayEngine,
-//   trace: any,
-//   baseOptions?: Partial<ReplayOptions>
-// ) => {
-//   const [replaying, setReplaying] = useState(false);
-//   const [result, setResult] = useState<ReplayResult | null>(null);
+// (legacy engine-based hook kept commented for now)
 
-//   const replayFromNode = useCallback(
-//     async (
-//       nodeId: string,
-//       modifications: ReplayModifications,
-//       overrides?: Partial<ReplayOptions>
-//     ) => {
-//       setReplaying(true);
-//       setResult(null);
-
-//       try {
-//         const options: ReplayOptions = {
-//           mode: ReplayMode.SAFE,
-//           mockExternalCalls: true,
-//           useOriginalData: true,
-//           ...baseOptions,
-//           ...overrides,
-//         };
-
-//         const data = await replayEngine.executeReplay(
-//           nodeId,
-//           trace,
-//           modifications,
-//           options
-//         );
-//         setResult(data);
-//         return data;
-//       } finally {
-//         setReplaying(false);
-//       }
-//     },
-//     [replayEngine, trace, baseOptions]
-//   );
-
-//   return {
-//     replayFromNode,
-//     replaying,
-//     result,
-//     clearResult: () => setResult(null),
-//   };
-// };
-
+// Minimal LLM/replay stream hook with socket result
+// --- replace the whole useReplay with this ---
 export function useReplay() {
-  const [output, setOutput] = useState<string>('');
+  const [output, setOutput] = useState('');
   const [loading, setLoading] = useState(false);
-  const streamBuf = useRef<string>('');
+  const [result, setResult] = useState<any>(null);
+  const socket = replaySocket; // ✅ reuse shared singleton
 
-  const send = useCallback(async (userText: string, opts?: { stream?: boolean }) => {
-    setLoading(true);
-    setOutput('');
-    streamBuf.current = '';
+  useEffect(() => {
+    const onReplayResult = (packet: any) => {
+      console.log('🧩 Received replay_result from backend:', packet);
+      setResult(packet);
+      setLoading(false);
+      if (packet?.message) setOutput(String(packet.message));
+    };
+    socket.on('replay_result', onReplayResult);
+    return () => socket.off('replay_result', onReplayResult);
+  }, [socket]);
 
-    const client = await createLLMCaller();
+  const replayFromNode = useCallback(
+    async (nodeId: string, payload: any) => {
+      if (!socket) return;
+      const traceId = payload?.traceId ?? null;
+      setLoading(true);
+      setOutput('');
+      setResult(null);
 
-    if (opts?.stream) {
-      client.onDelta(({ delta }) => {
-        streamBuf.current += delta;
-        setOutput(streamBuf.current);
-      });
-    }
+      if (traceId) socket.emit('watch_trace', traceId); // ✅ join room
+      console.log('🚀 Emitting replay_request:', { nodeId, payload });
+      socket.emit('replay_request', { nodeId, ...payload });
+    },
+    [socket]
+  );
 
-    const res = await client.send([{ role: 'user', content: userText }], {
-      stream: !!opts?.stream,
-    });
-
-    if (res.ok && res.text) setOutput(res.text); // one-shot or final
-    if (!res.ok && res.error) setOutput(`⚠️ ${res.error}`);
-    setLoading(false);
-  }, []);
-
-  return { output, loading, send };
+  return { replayFromNode, result, loading, output };
 }
 
 // ============================================================================

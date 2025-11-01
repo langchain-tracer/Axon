@@ -336,7 +336,7 @@ export class ReplayEngine {
     warnings: string[];
     recommendations: string[];
   } {
-    const nodesToReplay = this.getNodesFromPoint(startNodeId, trace);
+    const { nodes: nodesToReplay } = this.getNodesFromPoint(startNodeId, trace);
     const allSideEffects: SideEffect[] = [];
     for (const node of nodesToReplay) {
       const effects = this.sideEffectDetector.detectSideEffects(node);
@@ -350,11 +350,66 @@ export class ReplayEngine {
     return { mode, sideEffects: allSideEffects, warnings, recommendations };
   }
 
-  private getNodesFromPoint(startNodeId: string, trace: any): TraceNode[] {
-    const startIndex = trace.nodes.findIndex((n: any) => n.id === startNodeId);
-    if (startIndex === -1) return [];
-    return trace.nodes.slice(startIndex);
+// private getNodesFromPoint(startNodeId: string, trace: any): TraceNode[] {
+//   const startIndex = trace.nodes.findIndex((n: any) => n.id === startNodeId);
+//   if (startIndex === -1) return [];
+//   return trace.nodes.slice(startIndex);
+// }
+
+private resolveTraceNodes(trace: any): any[] {
+  if (!trace) return [];
+  // Expected outer shape: { trace, nodes, edges, ... }
+  if (Array.isArray(trace.nodes)) return trace.nodes;
+
+  // Sometimes callers accidentally pass the inner "trace" object (no nodes)
+  // If your API ever nests nodes differently, normalize here as well.
+  if (trace.trace && Array.isArray(trace.trace.nodes)) return trace.trace.nodes;
+  if (trace.graph && Array.isArray(trace.graph.nodes)) return trace.graph.nodes;
+
+  return [];
+}
+
+// 🔁 replace your existing getNodesFromPoint with this:
+public getNodesFromPoint(startNodeId: string, trace: any) {
+  const nodes = this.resolveTraceNodes(trace);
+
+  if (!Array.isArray(nodes) || nodes.length === 0) {
+    // Soft-fail instead of throwing — safety analysis can continue without nodes
+    console.warn(
+      'ReplayEngine.getNodesFromPoint(): nodes is undefined or not an array',
+      trace && {
+        hasOuterTrace: !!trace.trace,
+        keys: Object.keys(trace || {}),
+      }
+    );
+    return {
+      nodes: [],
+      currentIndex: -1,
+      previousNodes: [],
+      nextNodes: [],
+    };
   }
+
+  const currentIndex = nodes.findIndex((n: any) => n.id === startNodeId);
+
+  // If not found, still return a safe structure
+  if (currentIndex < 0) {
+    return {
+      nodes,
+      currentIndex: -1,
+      previousNodes: [],
+      nextNodes: nodes,
+    };
+  }
+
+  return {
+    nodes,
+    currentIndex,
+    previousNodes: nodes.slice(0, currentIndex),
+    nextNodes: nodes.slice(currentIndex + 1),
+  };
+}
+
 
   private determineReplayMode(sideEffects: SideEffect[]): ReplayMode {
     if (sideEffects.some(e => e.severity === 'critical' && !e.reversible)) return ReplayMode.BLOCKED;
@@ -490,7 +545,7 @@ export class ReplayEngine {
       const snapshot = this.stateSnapshotManager.captureSnapshot(startNodeId, trace);
 
       // 3) Determine nodes to run (topologically from start)
-      const nodesFromStart = this.getNodesFromPoint(startNodeId, trace);
+      const { nodes: nodesFromStart } = this.getNodesFromPoint(startNodeId, trace);
       const toRun = this.orderTopologically(nodesFromStart, trace);
 
       // 4) Setup mocks for external/tool calls if requested
@@ -526,12 +581,13 @@ export class ReplayEngine {
             const model = resolveModel(node);
 
             if (options.liveMode && options.llm) {
+              const messages: Array<{ role: "system" | "user" | "assistant"; content: string }> = [
+                ...(sys ? [{ role: "system" as const, content: String(sys) }] : []),
+                { role: "user" as const, content: String(user) },
+              ];
               const text = await options.llm({
                 model,
-                messages: [
-                  ...(sys ? [{ role: "system", content: String(sys) }] : []),
-                  { role: "user", content: String(user) },
-                ],
+                messages,
                 temperature: options.temperature ?? 0.7,
                 maxTokens: options.maxTokens ?? 512,
               });
