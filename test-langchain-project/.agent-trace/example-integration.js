@@ -1,5 +1,5 @@
-// Example: How to integrate Agent Trace with your LangChain agents
-import { createAutoTracer } from '@agent-trace/langchain-tracer';
+// Example: How to integrate Axon with your LangChain agents
+import { createAutoTracer } from '@axon-ai/langchain-tracer';
 
 // Create a tracer instance (auto-detects project configuration)
 const tracer = createAutoTracer();
@@ -108,4 +108,4 @@ async function runExample() {
 
 console.log('Agent Trace integration example created!');
 console.log('Edit this file to match your agent setup.');
-console.log('Make sure to start the dashboard with: agent-trace start');
+console.log('Make sure to start the dashboard with: axon-ai start');

@@ -1,6 +1,6 @@
 # Test LangChain Project
 
-Test files to demonstrate the Agent Trace Visualizer with real LangChain agents.
+Test files to demonstrate AXON tracing with real LangChain agents.
 
 ## 🚀 Quick Start
 
@@ -174,5 +174,5 @@ const myTool = new DynamicTool({
 
 - [LangChain Documentation](https://js.langchain.com/)
 - [OpenAI API](https://platform.openai.com/docs)
-- Agent Trace Visualizer Dashboard: http://localhost:5173
+- AXON Dashboard: http://localhost:5173
 

@@ -19,23 +19,23 @@ import { version } from './commands/version.js';
 const program = new Command();
 
 program
-  .name('agent-trace')
-  .description('Monitor LangChain agents in real-time with the Agent Trace dashboard')
+  .name('axon-ai')
+  .description('Monitor LangChain agents in real-time with the Axon dashboard')
   .version('1.0.0');
 
 // Start command - launches dashboard and enables tracing
 program
   .command('start')
-  .description('Start the Agent Trace dashboard and enable tracing')
+  .description('Start the Axon dashboard and enable tracing')
   .option('-p, --port <port>', 'Port for the backend server', '3000')
   .option('-d, --dashboard-port <port>', 'Port for the dashboard', '5173')
   .option('--no-open', 'Don\'t automatically open the dashboard in browser')
   .option('--project <name>', 'Project name for organizing traces')
   .action(async (options) => {
     try {
-      await startDashboard(options);
+      //await startDashboard(options);
     } catch (error) {
-      console.error(chalk.red('❌ Failed to start Agent Trace:'), (error as Error).message);
+      console.error(chalk.red('❌ Failed to start Axon:'), (error as Error).message);
       process.exit(1);
     }
   });
@@ -43,14 +43,14 @@ program
 // Init command - sets up tracing in a project
 program
   .command('init')
-  .description('Initialize Agent Trace in your project')
+  .description('Initialize Axon in your project')
   .option('--project <name>', 'Project name', 'default')
   .option('--auto-start', 'Automatically start dashboard after initialization')
   .action(async (options) => {
     try {
       await initProject(options);
     } catch (error) {
-      console.error(chalk.red('❌ Failed to initialize Agent Trace:'), (error as Error).message);
+      console.error(chalk.red('❌ Failed to initialize Axon:'), (error as Error).message);
       process.exit(1);
     }
   });
@@ -58,7 +58,7 @@ program
 // Status command - check if services are running
 program
   .command('status')
-  .description('Check the status of Agent Trace services')
+  .description('Check the status of Axon services')
   .action(async () => {
     try {
       await status();
@@ -71,7 +71,7 @@ program
 // Stop command - stop all services
 program
   .command('stop')
-  .description('Stop all Agent Trace services')
+  .description('Stop all Axon services')
   .action(async () => {
     try {
       await stop();
@@ -97,7 +97,7 @@ try {
 } catch (error) {
   if ((error as any).code === 'commander.unknownCommand') {
     console.error(chalk.red(`❌ Unknown command: ${(error as Error).message}`));
-    console.log(chalk.yellow('Run "agent-trace --help" to see available commands.'));
+    console.log(chalk.yellow('Run "axon-ai --help" to see available commands.'));
   } else if ((error as any).code === 'commander.help') {
     // Help was displayed, exit normally
     process.exit(0);

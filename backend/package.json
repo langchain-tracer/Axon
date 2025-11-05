@@ -1,8 +1,8 @@
 {
-  "name": "agent-trace-backend",
+  "name": "@axon-ai/backend",
   "version": "1.0.0",
   "type": "module",
-  "description": "Backend for Agent Trace Visualizer with SQLite",
+  "description": "Backend for AXON with SQLite",
   "main": "dist/server.js",
   "scripts": {
     "dev": "tsx watch src/server.ts",
@@ -11,7 +11,8 @@
     "test": "vitest",
     "test:ui": "vitest --ui",
     "db:init": "tsx src/database/schema.ts",
-    "db:seed": "tsx src/database/seed.ts"
+    "db:seed": "tsx src/database/seed.ts",
+    "prepublishOnly": "npm run build"
   },
   "dependencies": {
     "express": "^4.18.2",

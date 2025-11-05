@@ -10,7 +10,7 @@ interface InitOptions {
 }
 
 export async function initProject(options: InitOptions) {
-  const spinner = ora('Initializing Agent Trace in your project...').start();
+  const spinner = ora('Initializing Axon in your project...').start();
 
   try {
     const projectRoot = getProjectRoot();
@@ -19,8 +19,8 @@ export async function initProject(options: InitOptions) {
       return;
     }
 
-    // Create .agent-trace directory
-    const agentTraceDir = join(projectRoot, '.agent-trace');
+    // Create .axon-ai directory
+    const agentTraceDir = join(projectRoot, '.axon-ai');
     if (!existsSync(agentTraceDir)) {
       mkdirSync(agentTraceDir, { recursive: true });
     }
@@ -46,7 +46,7 @@ export async function initProject(options: InitOptions) {
     // Create example integration file
     const examplePath = join(agentTraceDir, 'example-integration.js');
     const exampleCode = `// Example: How to integrate Agent Trace with your LangChain agents
-import { createAutoTracer } from '@agent-trace/langchain-tracer';
+import { createAutoTracer } from '@axon-ai/langchain-tracer';
 
 // Create a tracer instance (auto-detects project configuration)
 const tracer = createAutoTracer();
@@ -153,9 +153,9 @@ async function runExample() {
 // Uncomment to run the example
 // runExample();
 
-console.log('Agent Trace integration example created!');
+console.log('Axon integration example created!');
 console.log('Edit this file to match your agent setup.');
-console.log('Make sure to start the dashboard with: agent-trace start');
+console.log('Make sure to start the dashboard with: axon-ai start');
 `;
 
     writeFileSync(examplePath, exampleCode);
@@ -169,24 +169,24 @@ console.log('Make sure to start the dashboard with: agent-trace start');
         packageJson.scripts = {};
       }
 
-      packageJson.scripts['agent-trace:start'] = 'agent-trace start';
-      packageJson.scripts['agent-trace:status'] = 'agent-trace status';
-      packageJson.scripts['agent-trace:stop'] = 'agent-trace stop';
+      packageJson.scripts['axon-ai:start'] = 'axon-ai start';
+      packageJson.scripts['axon-ai:status'] = 'axon-ai status';
+      packageJson.scripts['axon-ai:stop'] = 'axon-ai stop';
 
       writeFileSync(packageJsonPath, JSON.stringify(packageJson, null, 2));
     }
 
-    spinner.succeed('Agent Trace initialized successfully!');
+    spinner.succeed('Axon initialized successfully!');
 
-    console.log(chalk.green('\n✅ Agent Trace has been initialized in your project!'));
+    console.log(chalk.green('\n✅ Axon has been initialized in your project!'));
     console.log(chalk.blue(`📁 Project: ${options.project}`));
     console.log(chalk.blue(`📄 Config: ${configPath}`));
     console.log(chalk.blue(`📝 Example: ${examplePath}`));
 
     console.log(chalk.yellow('\n📋 Next steps:'));
-    console.log(chalk.gray('1. Install the LangChain tracer: npm install @agent-trace/langchain-tracer'));
+    console.log(chalk.gray('1. Install the LangChain tracer: npm install @axon-ai/langchain-tracer'));
     console.log(chalk.gray('2. Add the tracer to your agents (see example file)'));
-    console.log(chalk.gray('3. Start the dashboard: agent-trace start'));
+    console.log(chalk.gray('3. Start the dashboard: axon-ai start'));
     console.log(chalk.gray('4. Run your agents and watch them in real-time!'));
 
     if (options.autoStart) {
@@ -201,7 +201,7 @@ console.log('Make sure to start the dashboard with: agent-trace start');
     }
 
   } catch (error) {
-    spinner.fail('Failed to initialize Agent Trace');
+    spinner.fail('Failed to initialize Axon');
     throw error;
   }
 }
