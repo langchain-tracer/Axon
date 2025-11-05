@@ -35,9 +35,9 @@ export async function stop() {
       }
     }
 
-    // Also try to kill any agent-trace processes
+    // Also try to kill any axon-ai processes
     try {
-      const { stdout } = await execAsync('pgrep -f "agent-trace"');
+      const { stdout } = await execAsync('pgrep -f "axon-ai"');
       if (stdout.trim()) {
         const pids = stdout.trim().split('\n');
         for (const pid of pids) {
@@ -51,17 +51,17 @@ export async function stop() {
         }
       }
     } catch (error) {
-      // No agent-trace processes found
+      // No Axon processes found
     }
 
     if (killPromises.length > 0) {
       await Promise.all(killPromises);
-      spinner.succeed(`Stopped ${killPromises.length} Agent Trace processes`);
+      spinner.succeed(`Stopped ${killPromises.length} Axon processes`);
     } else {
-      spinner.succeed('No Agent Trace services were running');
+      spinner.succeed('No Axon services were running');
     }
 
-    console.log(chalk.green('\n✅ Agent Trace services have been stopped.'));
+    console.log(chalk.green('\n✅ Axon services have been stopped.'));
     console.log(chalk.gray('All tracing has been disabled.'));
 
   } catch (error) {
