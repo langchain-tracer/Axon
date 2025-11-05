@@ -39,7 +39,7 @@ export function getAgentTraceConfigDir(): string | null {
     return null;
   }
 
-  return join(projectRoot, '.agent-trace');
+  return join(projectRoot, '.axon-ai');
 }
 
 /**
@@ -62,11 +62,11 @@ export function getGlobalAgentTraceDir(): string {
   try {
     // Try to get npm global prefix
     const globalPrefix = execSync('npm config get prefix', { encoding: 'utf8' }).trim();
-    return join(globalPrefix, 'lib', 'node_modules', '@agent-trace');
+    return join(globalPrefix, 'lib', 'node_modules', '@axon-ai');
   } catch (error) {
     // Fallback to common locations
     const homeDir = require('os').homedir();
-    return join(homeDir, '.agent-trace');
+    return join(homeDir, '.axon-ai');
   }
 }
 
@@ -75,7 +75,7 @@ export function getGlobalAgentTraceDir(): string {
  */
 export function isAgentTraceInstalledGlobally(): boolean {
   try {
-    execSync('which agent-trace', { stdio: 'ignore' });
+    execSync('which axon-ai', { stdio: 'ignore' });
     return true;
   } catch (error) {
     return false;

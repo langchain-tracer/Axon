@@ -23,7 +23,7 @@ export function version() {
     }
 
     console.log(chalk.yellow('\n💡 For more information, visit:'));
-    console.log(chalk.blue('   https://github.com/yourusername/agent-trace-visualizer'));
+    console.log(chalk.blue('   https://github.com/yourusername/langchain-tracer/Axon.git'));
     
   } catch (error) {
     console.log(chalk.red('❌ Could not read version information'));

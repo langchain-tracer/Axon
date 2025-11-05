@@ -1,16 +1,16 @@
 {
   "name": "test-langchain-project",
   "version": "1.0.0",
-  "description": "Test project for Agent Trace Visualizer",
+  "description": "Test project for AXON",
   "type": "module",
   "main": "index.js",
   "scripts": {
     "test:simple": "tsx simple-test.ts",
     "test:comprehensive": "tsx comprehensive-test.ts",
     "test:mock": "node mock-test.js",
-    "agent-trace:start": "agent-trace start",
-    "agent-trace:status": "agent-trace status",
-    "agent-trace:stop": "agent-trace stop"
+    "axon-ai:start": "axon-ai start",
+    "axon-ai:status": "axon-ai status",
+    "axon-ai:stop": "axon-ai stop"
   },
   "dependencies": {
     "@langchain/openai": "^0.0.14",
