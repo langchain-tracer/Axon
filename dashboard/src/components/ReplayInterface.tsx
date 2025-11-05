@@ -1,17 +1,12 @@
 // import React, { useState, useEffect, useMemo } from 'react';
 // import {
 //   Play,
-//   Pause,
-//   RotateCcw,
+//   XCircle,
 //   Settings,
 //   AlertTriangle,
 //   CheckCircle,
-//   XCircle,
-//   Edit3,
 //   Zap,
 //   Shield,
-//   Clock,
-//   DollarSign,
 //   Eye,
 //   EyeOff,
 // } from 'lucide-react';
@@ -27,7 +22,7 @@
 
 // interface ReplayInterfaceProps {
 //   selectedNode: any;
-//   trace: any; // can be either {nodes, edges, id} OR {trace, nodes, edges, ...}
+//   trace: any; // {nodes, edges, id} OR {trace, nodes, edges, ...}
 //   onReplayComplete: (result: any) => void;
 //   onClose: () => void;
 // }
@@ -38,7 +33,6 @@
 //   onReplayComplete,
 //   onClose,
 // }: ReplayInterfaceProps) {
-//   // ---- engine + state -------------------------------------------------------
 //   const replayEngine = useMemo(() => new ReplayEngine(), []);
 
 //   const [safetyAnalysis, setSafetyAnalysis] = useState<any>(null);
@@ -65,10 +59,7 @@
 //     new Set()
 //   );
 
-//   // LLM caller for Live Mode
 //   const llm = useMemo(() => createSocketLLMCaller(), []);
-
-//   // Hook: run replays locally via ReplayEngine (and optionally Live Mode)
 //   const {
 //     replayFromNode,
 //     result: replayPacket,
@@ -76,31 +67,24 @@
 //     output: replayText,
 //   } = useReplay();
 
-//   const [, forceUpdate] = useState(0);
-// useEffect(() => {
-//   if (replayPacket) {
-//     onReplayComplete(replayPacket);
-//     forceUpdate((v) => v + 1);
-//   }
-// }, [replayPacket]);
+//   useEffect(() => {
+//     if (replayPacket) onReplayComplete(replayPacket);
+//   }, [replayPacket, onReplayComplete]);
 
-//   // ---- NORMALIZE TRACE SHAPE -----------------------------------------------
+//   // Normalize trace shape
 //   const normalizedTrace = useMemo(() => {
-//     if (!trace) {
-//       return { id: undefined, nodes: [], edges: [] };
-//     }
-//     const topLevelNodes = Array.isArray(trace.nodes) ? trace.nodes : [];
+//     if (!trace) return { id: undefined, nodes: [], edges: [] };
+//     const topNodes = Array.isArray(trace.nodes) ? trace.nodes : [];
 //     const nestedNodes =
 //       trace.trace && Array.isArray(trace.trace.nodes) ? trace.trace.nodes : [];
-//     const nodes = topLevelNodes.length ? topLevelNodes : nestedNodes;
+//     const nodes = topNodes.length ? topNodes : nestedNodes;
 
-//     const topLevelEdges = Array.isArray(trace.edges) ? trace.edges : [];
+//     const topEdges = Array.isArray(trace.edges) ? trace.edges : [];
 //     const nestedEdges =
 //       trace.trace && Array.isArray(trace.trace.edges) ? trace.trace.edges : [];
-//     const edges = topLevelEdges.length ? topLevelEdges : nestedEdges;
+//     const edges = topEdges.length ? topEdges : nestedEdges;
 
-//     const id = trace.id ?? trace.trace?.id;
-
+//     const id = trace.id ?? trace.trace?.id ?? trace.traceId ?? undefined;
 //     return { id, nodes, edges };
 //   }, [trace]);
 
@@ -123,14 +107,9 @@
 //     setOptions((prev) => ({ ...prev, mode: analysis.mode }));
 //   }, [selectedNode, trace, replayEngine]);
 
-//   useEffect(() => {
-//     if (replayPacket) onReplayComplete(replayPacket);
-//   }, [replayPacket, onReplayComplete]);
-
 //   const handleStartReplay = async () => {
 //     if (!selectedNode || !trace) return;
 
-//     // resolve llm caller if live mode is enabled
 //     let resolvedLlm: any = undefined;
 //     if (options.liveMode) {
 //       try {
@@ -140,56 +119,57 @@
 //       }
 //     }
 
-//     // make sure backend knows which trace to replay
 //     const traceId =
 //       (trace as any)?.trace?.id ??
 //       (trace as any)?.id ??
 //       (trace as any)?.traceId ??
 //       null;
 
-//     const payload = {
-//       modifications,
+//     const editedPrompt =
+//       modifications.promptChanges?.get(selectedNode.id) ??
+//       (selectedNode.prompts && selectedNode.prompts.length
+//         ? selectedNode.prompts.join('\n\n')
+//         : selectedNode.response ||
+//           (typeof selectedNode.toolInput === 'string'
+//             ? selectedNode.toolInput
+//             : JSON.stringify(selectedNode.toolInput ?? '', null, 2)) ||
+//           '');
+
+//     const chosenModel =
+//       modifications.modelChanges?.get(selectedNode.id) ||
+//       selectedNode.model ||
+//       'gpt-3.5-turbo';
+
+//     const messages = [
+//       { role: 'system', content: 'You are a helpful assistant.' },
+//       { role: 'user', content: editedPrompt || 'No prompt provided.' },
+//     ];
+
+//     await replayFromNode(selectedNode.id, {
+//       // core opts
 //       mode: options.mode,
 //       mockExternalCalls: options.mockExternalCalls,
 //       useOriginalData: options.useOriginalData,
 //       confirmEachSideEffect: options.confirmEachSideEffect,
 //       maxReplayDepth: options.maxReplayDepth,
-//       // Live mode knobs:
+
+//       // live knobs
 //       liveMode: options.liveMode,
 //       llm: resolvedLlm,
 //       temperature: options.temperature,
 //       maxTokens: options.maxTokens,
-//       // 🔑 ensure the backend can find the trace
+
+//       // 🔑 replay payload (belt + suspenders)
 //       traceId,
-//     } as unknown as Partial<ReplayOptions> & { traceId?: string | null };
-
-//     try {
-//       const res = (await replayFromNode(
-//         selectedNode.id,
-//         payload as any
-//       )) as any;
-
-//       if (res) {
-//         onReplayComplete(res);
-//         return;
-//       }
-//     } catch (err) {
-//       onReplayComplete({
-//         success: false,
-//         error:
-//           err instanceof Error
-//             ? err.message
-//             : 'Replay failed. See server logs.',
-//         executedNodes: [],
-//         skippedNodes: [],
-//         sideEffects: [],
-//         totalCost: 0,
-//         totalLatency: 0,
-//       });
-//     }
+//       startNodeId: selectedNode.id, // server consumes this
+//       nodeId: selectedNode.id, // some hooks/clients expect this
+//       messages,
+//       stream: true,
+//       model: chosenModel,
+//       modifiedPrompt: editedPrompt,
+//     });
 //   };
 
-//   // ---- Minimal but crucial fix for Maps + controlled inputs -----------------
 //   const handleModificationChange = (
 //     type: keyof ReplayModifications,
 //     nodeId: string,
@@ -197,14 +177,13 @@
 //   ) => {
 //     setModifications((prev) => {
 //       const next = { ...prev } as any;
-//       const updatedMap = new Map(next[type] as Map<string, any>); // new Map reference
+//       const updatedMap = new Map(next[type] as Map<string, any>);
 //       updatedMap.set(nodeId, value);
 //       next[type] = updatedMap;
-//       return next; // new object reference
+//       return next;
 //     });
 //   };
 
-//   // Helper: prefer map value if key exists (preserves empty string)
 //   const getMapValueOr = (
 //     map: Map<string, any> | undefined,
 //     key: string,
@@ -234,8 +213,6 @@
 //         return <Zap className='w-4 h-4' />;
 //       case ReplayMode.WARNING:
 //         return <AlertTriangle className='w-4 h-4' />;
-//       case ReplayMode.BLOCKED:
-//         return <XCircle className='w-4 h-4' />;
 //       default:
 //         return <Shield className='w-4 h-4' />;
 //     }
@@ -254,27 +231,19 @@
 //     }
 //   };
 
-//   const toggleSideEffectExpansion = (effectId: string) => {
-//     setExpandedSideEffects((prev) => {
-//       const s = new Set(prev);
-//       s.has(effectId) ? s.delete(effectId) : s.add(effectId);
-//       return s;
-//     });
-//   };
-
-//   // ---- early guard UI (INSIDE the function) --------------------------------
 //   if (!selectedNode || !trace) {
 //     return (
 //       <div className='bg-slate-800 border border-slate-700 rounded-lg p-6'>
 //         <div className='text-center text-slate-400'>
 //           <Play className='w-12 h-12 mx-auto mb-4' />
-//           <p>Select a node to start replay</p>
 //         </div>
+//         <p className='text-center text-slate-400'>
+//           Select a node to start replay
+//         </p>
 //       </div>
 //     );
 //   }
 
-//   // ---- main UI --------------------------------------------------------------
 //   return (
 //     <div className='bg-slate-800 border border-slate-700 rounded-lg overflow-hidden'>
 //       {/* Header */}
@@ -283,7 +252,7 @@
 //           <div className='flex items-center gap-3'>
 //             <Play className='w-5 h-5 text-blue-400' />
 //             <h3 className='text-lg font-semibold text-white'>
-//               Replay & Experimentation
+//               Replay &amp; Experimentation
 //             </h3>
 //             <div
 //               className={`px-2 py-1 rounded text-xs border flex items-center gap-1 ${getModeColor(
@@ -313,7 +282,7 @@
 //       <div className='flex border-b border-slate-700'>
 //         {[
 //           { id: 'analysis', label: 'Safety Analysis', icon: Shield },
-//           { id: 'modifications', label: 'Modifications', icon: Edit3 },
+//           { id: 'modifications', label: 'Modifications', icon: AlertTriangle },
 //           { id: 'options', label: 'Options', icon: Settings },
 //         ].map((tab) => (
 //           <button
@@ -335,7 +304,6 @@
 //       <div className='p-4 max-h-96 overflow-auto'>
 //         {activeTab === 'analysis' && safetyAnalysis && (
 //           <div className='space-y-4'>
-//             {/* Mode Summary */}
 //             <div className='bg-slate-700/50 p-4 rounded-lg'>
 //               <h4 className='font-semibold text-white mb-2'>
 //                 Replay Safety Analysis
@@ -361,7 +329,6 @@
 //               </div>
 //             </div>
 
-//             {/* Warnings */}
 //             {Array.isArray(safetyAnalysis.warnings) &&
 //               safetyAnalysis.warnings.length > 0 && (
 //                 <div className='bg-yellow-500/10 border border-yellow-500/20 p-4 rounded-lg'>
@@ -381,7 +348,6 @@
 //                 </div>
 //               )}
 
-//             {/* Side Effects */}
 //             {Array.isArray(safetyAnalysis.sideEffects) &&
 //               safetyAnalysis.sideEffects.length > 0 && (
 //                 <div>
@@ -397,15 +363,25 @@
 //                         >
 //                           <button
 //                             onClick={() =>
-//                               toggleSideEffectExpansion(effect.nodeId)
+//                               setExpandedSideEffects((s) => {
+//                                 const c = new Set(s);
+//                                 c.has(effect.nodeId)
+//                                   ? c.delete(effect.nodeId)
+//                                   : c.add(effect.nodeId);
+//                                 return c;
+//                               })
 //                             }
 //                             className='flex items-center justify-between w-full text-left'
 //                           >
 //                             <div className='flex items-center gap-2'>
 //                               <div
-//                                 className={`px-2 py-1 rounded text-xs border ${getSeverityColor(
-//                                   effect.severity as any
-//                                 )}`}
+//                                 className={`px-2 py-1 rounded text-xs border ${
+//                                   effect.severity === 'critical'
+//                                     ? 'text-red-400 bg-red-500/20 border-red-500'
+//                                     : effect.severity === 'safe'
+//                                     ? 'text-green-400 bg-green-500/20 border-green-500'
+//                                     : 'text-yellow-400 bg-yellow-500/20 border-yellow-500'
+//                                 }`}
 //                               >
 //                                 {effect.severity}
 //                               </div>
@@ -424,68 +400,15 @@
 
 //                           {expandedSideEffects.has(effect.nodeId) && (
 //                             <div className='mt-2 pt-2 border-t border-slate-600'>
-//                               <p className='text-sm text-slate-300 mb-2'>
+//                               <p className='text-sm text-slate-300'>
 //                                 {effect.description}
 //                               </p>
-//                               <div className='grid grid-cols-2 gap-2 text-xs'>
-//                                 <div>
-//                                   <span className='text-slate-400'>
-//                                     Reversible:
-//                                   </span>
-//                                   <span
-//                                     className={`ml-1 ${
-//                                       effect.reversible
-//                                         ? 'text-green-400'
-//                                         : 'text-red-400'
-//                                     }`}
-//                                   >
-//                                     {effect.reversible ? 'Yes' : 'No'}
-//                                   </span>
-//                                 </div>
-//                                 <div>
-//                                   <span className='text-slate-400'>
-//                                     External:
-//                                   </span>
-//                                   <span
-//                                     className={`ml-1 ${
-//                                       effect.externalDependency
-//                                         ? 'text-yellow-400'
-//                                         : 'text-green-400'
-//                                     }`}
-//                                   >
-//                                     {effect.externalDependency ? 'Yes' : 'No'}
-//                                   </span>
-//                                 </div>
-//                               </div>
 //                             </div>
 //                           )}
 //                         </div>
 //                       )
 //                     )}
 //                   </div>
-//                 </div>
-//               )}
-
-//             {/* Recommendations */}
-//             {Array.isArray(safetyAnalysis.recommendations) &&
-//               safetyAnalysis.recommendations.length > 0 && (
-//                 <div className='bg-blue-500/10 border border-blue-500/20 p-4 rounded-lg'>
-//                   <h4 className='font-semibold text-blue-400 mb-2'>
-//                     Recommendations
-//                   </h4>
-//                   <ul className='space-y-1'>
-//                     {safetyAnalysis.recommendations.map(
-//                       (rec: string, index: number) => (
-//                         <li
-//                           key={index}
-//                           className='text-sm text-blue-300 flex items-start gap-2'
-//                         >
-//                           <span className='text-blue-400 mt-1'>•</span>
-//                           {rec}
-//                         </li>
-//                       )
-//                     )}
-//                   </ul>
 //                 </div>
 //               )}
 //           </div>
@@ -529,10 +452,10 @@
 //                   </div>
 //                   <div className='text-xs text-slate-400'>Modified:</div>
 //                   <textarea
+//                     key={selectedNode.id + ':prompt'}
 //                     value={getMapValueOr(
 //                       modifications.promptChanges,
 //                       selectedNode.id,
-//                       // fallback to a readable default
 //                       (selectedNode.prompts && selectedNode.prompts.length > 0
 //                         ? selectedNode.prompts.join('\n\n')
 //                         : '') ||
@@ -556,57 +479,13 @@
 //                 </div>
 //               </div>
 
-//               {/* Tool Response Override */}
-//               {selectedNode.toolName && (
-//                 <div className='mb-4'>
-//                   <label className='block text-sm font-medium text-slate-300 mb-2'>
-//                     Override Tool Response
-//                   </label>
-//                   <div className='space-y-2'>
-//                     <div className='text-xs text-slate-400'>
-//                       Original Response:
-//                     </div>
-//                     <div className='text-xs text-slate-300 bg-slate-700/50 p-2 rounded border-l-2 border-green-500 max-h-40 overflow-y-auto whitespace-pre-wrap'>
-//                       {selectedNode.toolOutput
-//                         ? typeof selectedNode.toolOutput === 'string'
-//                           ? selectedNode.toolOutput
-//                           : JSON.stringify(selectedNode.toolOutput, null, 2)
-//                         : selectedNode.response
-//                         ? selectedNode.response
-//                         : 'No response available'}
-//                     </div>
-//                     <div className='text-xs text-slate-400'>Mock Response:</div>
-//                     <textarea
-//                       value={getMapValueOr(
-//                         modifications.toolResponseOverrides,
-//                         selectedNode.id,
-//                         (selectedNode.toolOutput
-//                           ? typeof selectedNode.toolOutput === 'string'
-//                             ? selectedNode.toolOutput
-//                             : JSON.stringify(selectedNode.toolOutput, null, 2)
-//                           : selectedNode.response || '')
-//                       )}
-//                       onChange={(e) =>
-//                         handleModificationChange(
-//                           'toolResponseOverrides',
-//                           selectedNode.id,
-//                           e.target.value
-//                         )
-//                       }
-//                       className='w-full bg-slate-600 border border-slate-500 rounded-md px-3 py-2 text-sm text-white placeholder-slate-400 focus:ring-blue-500 focus:border-blue-500 font-mono'
-//                       rows={6}
-//                       placeholder='Enter mock tool response...'
-//                     />
-//                   </div>
-//                 </div>
-//               )}
-
 //               {/* Model Change */}
 //               <div className='mb-4'>
 //                 <label className='block text-sm font-medium text-slate-300 mb-2'>
 //                   Change Model
 //                 </label>
 //                 <select
+//                   key={selectedNode.id + ':model'}
 //                   value={getMapValueOr(
 //                     modifications.modelChanges,
 //                     selectedNode.id,
@@ -624,6 +503,8 @@
 //                   <option value='gpt-3.5-turbo'>GPT-3.5 Turbo</option>
 //                   <option value='gpt-4'>GPT-4</option>
 //                   <option value='gpt-4-turbo'>GPT-4 Turbo</option>
+//                   <option value='gpt-4o'>GPT-4o</option>
+//                   <option value='gpt-4o-mini'>GPT-4o mini</option>
 //                   <option value='claude-3-sonnet'>Claude 3 Sonnet</option>
 //                 </select>
 //               </div>
@@ -685,43 +566,6 @@
 //                   />
 //                   <span className='text-sm text-slate-300'>
 //                     Confirm each side effect individually
-//                   </span>
-//                 </label>
-
-//                 <div>
-//                   <label className='block text-sm font-medium text-slate-300 mb-2'>
-//                     Max Replay Depth
-//                   </label>
-//                   <input
-//                     type='number'
-//                     value={options.maxReplayDepth}
-//                     onChange={(e) =>
-//                       setOptions((prev) => ({
-//                         ...prev,
-//                         maxReplayDepth: parseInt(e.target.value),
-//                       }))
-//                     }
-//                     className='w-full bg-slate-600 border border-slate-500 rounded-md px-3 py-2 text-sm text-white focus:ring-blue-500 focus:border-blue-500'
-//                     min='1'
-//                     max='50'
-//                   />
-//                 </div>
-
-//                 {/* --- Live Replay Options --- */}
-//                 <label className='flex items-center gap-3 mt-3'>
-//                   <input
-//                     type='checkbox'
-//                     checked={!!options.liveMode}
-//                     onChange={(e) =>
-//                       setOptions((prev) => ({
-//                         ...prev,
-//                         liveMode: e.target.checked,
-//                       }))
-//                     }
-//                     className='rounded border-slate-500 bg-slate-600 text-blue-500 focus:ring-blue-500'
-//                   />
-//                   <span className='text-sm text-slate-300'>
-//                     Live mode (re-run changed LLM nodes)
 //                   </span>
 //                 </label>
 
@@ -793,12 +637,7 @@
 //             </button>
 //             <button
 //               onClick={handleStartReplay}
-//               disabled={
-//                 isReplaying ||
-//                 safetyAnalysis?.mode === ReplayMode.BLOCKED ||
-//                 !Array.isArray(normalizedTrace.nodes) ||
-//                 normalizedTrace.nodes.length === 0
-//               }
+//               disabled={!normalizedTrace.nodes?.length || isReplaying}
 //               className='px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-600 disabled:cursor-not-allowed text-white text-sm font-medium rounded-md transition-colors flex items-center gap-2'
 //             >
 //               {isReplaying ? (
@@ -816,18 +655,16 @@
 //           </div>
 //         </div>
 
-//         {/* 🧩 Replay result output */}
+//         {/* Inline result/debug */}
 //         <div className='mt-4'>
 //           {isReplaying && (
 //             <p className='text-xs text-slate-400'>⏳ Running replay…</p>
 //           )}
-
 //           {replayPacket && (
 //             <pre className='mt-2 bg-slate-900/70 border border-slate-700 rounded-lg p-3 text-xs text-green-300 overflow-x-auto whitespace-pre-wrap'>
 //               {JSON.stringify(replayPacket, null, 2)}
 //             </pre>
 //           )}
-
 //           {replayText && !isReplaying && (
 //             <p className='mt-2 text-xs text-cyan-300'>🧠 {replayText}</p>
 //           )}
@@ -836,20 +673,16 @@
 //     </div>
 //   );
 // }
+
 import React, { useState, useEffect, useMemo } from 'react';
 import {
   Play,
-  Pause,
-  RotateCcw,
+  XCircle,
   Settings,
   AlertTriangle,
   CheckCircle,
-  XCircle,
-  Edit3,
   Zap,
   Shield,
-  Clock,
-  DollarSign,
   Eye,
   EyeOff,
 } from 'lucide-react';
@@ -865,7 +698,7 @@ import createSocketLLMCaller from '../utils/createLLMCaller';
 
 interface ReplayInterfaceProps {
   selectedNode: any;
-  trace: any; // can be either {nodes, edges, id} OR {trace, nodes, edges, ...}
+  trace: any; // {nodes, edges, id} OR {trace, nodes, edges, ...}
   onReplayComplete: (result: any) => void;
   onClose: () => void;
 }
@@ -876,7 +709,6 @@ export default function ReplayInterface({
   onReplayComplete,
   onClose,
 }: ReplayInterfaceProps) {
-  // ---- engine + state -------------------------------------------------------
   const replayEngine = useMemo(() => new ReplayEngine(), []);
 
   const [safetyAnalysis, setSafetyAnalysis] = useState<any>(null);
@@ -888,12 +720,16 @@ export default function ReplayInterface({
     modelChanges: new Map(),
   });
 
+  // ✅ Add sensible defaults for liveMode + token knobs so server gets consistent values
   const [options, setOptions] = useState<ReplayOptions>({
     mode: ReplayMode.SAFE,
     mockExternalCalls: true,
     useOriginalData: true,
     confirmEachSideEffect: false,
     maxReplayDepth: 10,
+    liveMode: false,
+    temperature: 0.0,
+    maxTokens: 150,
   });
 
   const [activeTab, setActiveTab] = useState<
@@ -903,10 +739,7 @@ export default function ReplayInterface({
     new Set()
   );
 
-  // LLM caller for Live Mode
   const llm = useMemo(() => createSocketLLMCaller(), []);
-
-  // Hook: run replays locally via ReplayEngine (and optionally Live Mode)
   const {
     replayFromNode,
     result: replayPacket,
@@ -914,32 +747,24 @@ export default function ReplayInterface({
     output: replayText,
   } = useReplay();
 
-  // 🔁 Force a local refresh when a replay result arrives (and notify parent once)
-  const [, forceUpdate] = useState(0);
   useEffect(() => {
-    if (replayPacket) {
-      onReplayComplete(replayPacket);
-      forceUpdate((v) => v + 1);
-    }
+    if (replayPacket) onReplayComplete(replayPacket);
   }, [replayPacket, onReplayComplete]);
 
-  // ---- NORMALIZE TRACE SHAPE -----------------------------------------------
+  // Normalize trace shape
   const normalizedTrace = useMemo(() => {
-    if (!trace) {
-      return { id: undefined, nodes: [], edges: [] };
-    }
-    const topLevelNodes = Array.isArray(trace.nodes) ? trace.nodes : [];
+    if (!trace) return { id: undefined, nodes: [], edges: [] };
+    const topNodes = Array.isArray(trace.nodes) ? trace.nodes : [];
     const nestedNodes =
       trace.trace && Array.isArray(trace.trace.nodes) ? trace.trace.nodes : [];
-    const nodes = topLevelNodes.length ? topLevelNodes : nestedNodes;
+    const nodes = topNodes.length ? topNodes : nestedNodes;
 
-    const topLevelEdges = Array.isArray(trace.edges) ? trace.edges : [];
+    const topEdges = Array.isArray(trace.edges) ? trace.edges : [];
     const nestedEdges =
       trace.trace && Array.isArray(trace.trace.edges) ? trace.trace.edges : [];
-    const edges = topLevelEdges.length ? topLevelEdges : nestedEdges;
+    const edges = topEdges.length ? topEdges : nestedEdges;
 
-    const id = trace.id ?? trace.trace?.id;
-
+    const id = trace.id ?? trace.trace?.id ?? trace.traceId ?? undefined;
     return { id, nodes, edges };
   }, [trace]);
 
@@ -962,12 +787,17 @@ export default function ReplayInterface({
     setOptions((prev) => ({ ...prev, mode: analysis.mode }));
   }, [selectedNode, trace, replayEngine]);
 
-  // ⚠️ Removed the duplicate effect that also called onReplayComplete
+  const modeLabel = useMemo(() => {
+    // Handle numeric enums gracefully
+    if (typeof options.mode === 'number') {
+      return ReplayMode[options.mode] ?? 'SAFE';
+    }
+    return String(options.mode ?? 'SAFE').toUpperCase();
+  }, [options.mode]);
 
   const handleStartReplay = async () => {
     if (!selectedNode || !trace) return;
 
-    // resolve llm caller if live mode is enabled
     let resolvedLlm: any = undefined;
     if (options.liveMode) {
       try {
@@ -977,56 +807,58 @@ export default function ReplayInterface({
       }
     }
 
-    // make sure backend knows which trace to replay
     const traceId =
       (trace as any)?.trace?.id ??
       (trace as any)?.id ??
       (trace as any)?.traceId ??
       null;
 
-    const payload = {
-      modifications,
+    const editedPrompt =
+      modifications.promptChanges?.get(selectedNode.id) ??
+      (selectedNode.prompts && selectedNode.prompts.length
+        ? selectedNode.prompts.join('\n\n')
+        : selectedNode.response ||
+          (typeof selectedNode.toolInput === 'string'
+            ? selectedNode.toolInput
+            : JSON.stringify(selectedNode.toolInput ?? '', null, 2)) ||
+          '');
+
+    const chosenModel =
+      modifications.modelChanges?.get(selectedNode.id) ||
+      selectedNode.model ||
+      'gpt-4o-mini';
+
+    const messages = [
+      { role: 'system', content: 'You are a helpful assistant.' },
+      { role: 'user', content: editedPrompt || 'No prompt provided.' },
+    ];
+
+    // 🔑 Send everything your server expects (matches your /replay_llm_request handler)
+    await replayFromNode(selectedNode.id, {
+      // core opts (passed through hooks/libs as needed)
       mode: options.mode,
       mockExternalCalls: options.mockExternalCalls,
       useOriginalData: options.useOriginalData,
       confirmEachSideEffect: options.confirmEachSideEffect,
       maxReplayDepth: options.maxReplayDepth,
-      // Live mode knobs:
+
+      // live knobs
       liveMode: options.liveMode,
       llm: resolvedLlm,
       temperature: options.temperature,
       maxTokens: options.maxTokens,
-      // 🔑 ensure the backend can find the trace
+
+      // server payload
       traceId,
-    } as unknown as Partial<ReplayOptions> & { traceId?: string | null };
-
-    try {
-      const res = (await replayFromNode(
-        selectedNode.id,
-        payload as any
-      )) as any;
-
-      if (res) {
-        onReplayComplete(res);
-        return;
-      }
-    } catch (err) {
-      onReplayComplete({
-        success: false,
-        error:
-          err instanceof Error
-            ? err.message
-            : 'Replay failed. See server logs.',
-        executedNodes: [],
-        skippedNodes: [],
-        sideEffects: [],
-        totalCost: 0,
-        totalLatency: 0,
-      });
-    }
+      startNodeId: selectedNode.id, // server consumes this to traverse descendants
+      nodeId: selectedNode.id, // some clients expect this
+      messages,
+      stream: true,
+      model: chosenModel,
+      modifiedPrompt: editedPrompt,
+    });
   };
 
-  // ---- Minimal but crucial fix for Maps + controlled inputs -----------------
   const handleModificationChange = (
     type: keyof ReplayModifications,
     nodeId: string,
@@ -1034,14 +866,13 @@ export default function ReplayInterface({
   ) => {
     setModifications((prev) => {
       const next = { ...prev } as any;
-      const updatedMap = new Map(next[type] as Map<string, any>); // new Map reference
+      const updatedMap = new Map(next[type] as Map<string, any>);
       updatedMap.set(nodeId, value);
       next[type] = updatedMap;
-      return next; // new object reference
+      return next;
     });
   };
 
-  // Helper: prefer map value if key exists (preserves empty string)
   const getMapValueOr = (
     map: Map<string, any> | undefined,
     key: string,
@@ -1071,8 +902,6 @@ export default function ReplayInterface({
         return <Zap className='w-4 h-4' />;
       case ReplayMode.WARNING:
         return <AlertTriangle className='w-4 h-4' />;
-      case ReplayMode.BLOCKED:
-        return <XCircle className='w-4 h-4' />;
       default:
         return <Shield className='w-4 h-4' />;
     }
@@ -1091,27 +920,19 @@ export default function ReplayInterface({
     }
   };
 
-  const toggleSideEffectExpansion = (effectId: string) => {
-    setExpandedSideEffects((prev) => {
-      const s = new Set(prev);
-      s.has(effectId) ? s.delete(effectId) : s.add(effectId);
-      return s;
-    });
-  };
-
-  // ---- early guard UI (INSIDE the function) --------------------------------
   if (!selectedNode || !trace) {
     return (
       <div className='bg-slate-800 border border-slate-700 rounded-lg p-6'>
         <div className='text-center text-slate-400'>
           <Play className='w-12 h-12 mx-auto mb-4' />
-          <p>Select a node to start replay</p>
         </div>
+        <p className='text-center text-slate-400'>
+          Select a node to start replay
+        </p>
       </div>
     );
   }
 
-  // ---- main UI --------------------------------------------------------------
   return (
     <div className='bg-slate-800 border border-slate-700 rounded-lg overflow-hidden'>
       {/* Header */}
@@ -1120,7 +941,7 @@ export default function ReplayInterface({
           <div className='flex items-center gap-3'>
             <Play className='w-5 h-5 text-blue-400' />
             <h3 className='text-lg font-semibold text-white'>
-              Replay & Experimentation
+              Replay &amp; Experimentation
             </h3>
             <div
               className={`px-2 py-1 rounded text-xs border flex items-center gap-1 ${getModeColor(
@@ -1128,7 +949,7 @@ export default function ReplayInterface({
               )}`}
             >
               {getModeIcon(options.mode)}
-              {options.mode.toUpperCase()}
+              {String(modeLabel).toUpperCase()}
             </div>
           </div>
           <button
@@ -1150,7 +971,7 @@ export default function ReplayInterface({
       <div className='flex border-b border-slate-700'>
         {[
           { id: 'analysis', label: 'Safety Analysis', icon: Shield },
-          { id: 'modifications', label: 'Modifications', icon: Edit3 },
+          { id: 'modifications', label: 'Modifications', icon: AlertTriangle },
           { id: 'options', label: 'Options', icon: Settings },
         ].map((tab) => (
           <button
@@ -1172,7 +993,6 @@ export default function ReplayInterface({
       <div className='p-4 max-h-96 overflow-auto'>
         {activeTab === 'analysis' && safetyAnalysis && (
           <div className='space-y-4'>
-            {/* Mode Summary */}
             <div className='bg-slate-700/50 p-4 rounded-lg'>
               <h4 className='font-semibold text-white mb-2'>
                 Replay Safety Analysis
@@ -1186,7 +1006,9 @@ export default function ReplayInterface({
                     )}`}
                   >
                     {getModeIcon(safetyAnalysis.mode)}
-                    {safetyAnalysis.mode}
+                    {typeof safetyAnalysis.mode === 'number'
+                      ? ReplayMode[safetyAnalysis.mode] ?? 'SAFE'
+                      : String(safetyAnalysis.mode)}
                   </div>
                 </div>
                 <div>
@@ -1198,7 +1020,6 @@ export default function ReplayInterface({
               </div>
             </div>
 
-            {/* Warnings */}
             {Array.isArray(safetyAnalysis.warnings) &&
               safetyAnalysis.warnings.length > 0 && (
                 <div className='bg-yellow-500/10 border border-yellow-500/20 p-4 rounded-lg'>
@@ -1218,7 +1039,6 @@ export default function ReplayInterface({
                 </div>
               )}
 
-            {/* Side Effects */}
             {Array.isArray(safetyAnalysis.sideEffects) &&
               safetyAnalysis.sideEffects.length > 0 && (
                 <div>
@@ -1234,15 +1054,25 @@ export default function ReplayInterface({
                         >
                           <button
                             onClick={() =>
-                              toggleSideEffectExpansion(effect.nodeId)
+                              setExpandedSideEffects((s) => {
+                                const c = new Set(s);
+                                c.has(effect.nodeId)
+                                  ? c.delete(effect.nodeId)
+                                  : c.add(effect.nodeId);
+                                return c;
+                              })
                             }
                             className='flex items-center justify-between w-full text-left'
                           >
                             <div className='flex items-center gap-2'>
                               <div
-                                className={`px-2 py-1 rounded text-xs border ${getSeverityColor(
-                                  effect.severity as any
-                                )}`}
+                                className={`px-2 py-1 rounded text-xs border ${
+                                  effect.severity === 'critical'
+                                    ? 'text-red-400 bg-red-500/20 border-red-500'
+                                    : effect.severity === 'safe'
+                                    ? 'text-green-400 bg-green-500/20 border-green-500'
+                                    : 'text-yellow-400 bg-yellow-500/20 border-yellow-500'
+                                }`}
                               >
                                 {effect.severity}
                               </div>
@@ -1261,68 +1091,15 @@ export default function ReplayInterface({
 
                           {expandedSideEffects.has(effect.nodeId) && (
                             <div className='mt-2 pt-2 border-t border-slate-600'>
-                              <p className='text-sm text-slate-300 mb-2'>
+                              <p className='text-sm text-slate-300'>
                                 {effect.description}
                               </p>
-                              <div className='grid grid-cols-2 gap-2 text-xs'>
-                                <div>
-                                  <span className='text-slate-400'>
-                                    Reversible:
-                                  </span>
-                                  <span
-                                    className={`ml-1 ${
-                                      effect.reversible
-                                        ? 'text-green-400'
-                                        : 'text-red-400'
-                                    }`}
-                                  >
-                                    {effect.reversible ? 'Yes' : 'No'}
-                                  </span>
-                                </div>
-                                <div>
-                                  <span className='text-slate-400'>
-                                    External:
-                                  </span>
-                                  <span
-                                    className={`ml-1 ${
-                                      effect.externalDependency
-                                        ? 'text-yellow-400'
-                                        : 'text-green-400'
-                                    }`}
-                                  >
-                                    {effect.externalDependency ? 'Yes' : 'No'}
-                                  </span>
-                                </div>
-                              </div>
                             </div>
                           )}
                         </div>
                       )
                     )}
                   </div>
-                </div>
-              )}
-
-            {/* Recommendations */}
-            {Array.isArray(safetyAnalysis.recommendations) &&
-              safetyAnalysis.recommendations.length > 0 && (
-                <div className='bg-blue-500/10 border border-blue-500/20 p-4 rounded-lg'>
-                  <h4 className='font-semibold text-blue-400 mb-2'>
-                    Recommendations
-                  </h4>
-                  <ul className='space-y-1'>
-                    {safetyAnalysis.recommendations.map(
-                      (rec: string, index: number) => (
-                        <li
-                          key={index}
-                          className='text-sm text-blue-300 flex items-start gap-2'
-                        >
-                          <span className='text-blue-400 mt-1'>•</span>
-                          {rec}
-                        </li>
-                      )
-                    )}
-                  </ul>
                 </div>
               )}
           </div>
@@ -1393,52 +1170,6 @@ export default function ReplayInterface({
                 </div>
               </div>
 
-              {/* Tool Response Override */}
-              {selectedNode.toolName && (
-                <div className='mb-4'>
-                  <label className='block text-sm font-medium text-slate-300 mb-2'>
-                    Override Tool Response
-                  </label>
-                  <div className='space-y-2'>
-                    <div className='text-xs text-slate-400'>
-                      Original Response:
-                    </div>
-                    <div className='text-xs text-slate-300 bg-slate-700/50 p-2 rounded border-l-2 border-green-500 max-h-40 overflow-y-auto whitespace-pre-wrap'>
-                      {selectedNode.toolOutput
-                        ? typeof selectedNode.toolOutput === 'string'
-                          ? selectedNode.toolOutput
-                          : JSON.stringify(selectedNode.toolOutput, null, 2)
-                        : selectedNode.response
-                        ? selectedNode.response
-                        : 'No response available'}
-                    </div>
-                    <div className='text-xs text-slate-400'>Mock Response:</div>
-                    <textarea
-                      key={selectedNode.id + ':tool'}
-                      value={getMapValueOr(
-                        modifications.toolResponseOverrides,
-                        selectedNode.id,
-                        selectedNode.toolOutput
-                          ? typeof selectedNode.toolOutput === 'string'
-                            ? selectedNode.toolOutput
-                            : JSON.stringify(selectedNode.toolOutput, null, 2)
-                          : selectedNode.response || ''
-                      )}
-                      onChange={(e) =>
-                        handleModificationChange(
-                          'toolResponseOverrides',
-                          selectedNode.id,
-                          e.target.value
-                        )
-                      }
-                      className='w-full bg-slate-600 border border-slate-500 rounded-md px-3 py-2 text-sm text-white placeholder-slate-400 focus:ring-blue-500 focus:border-blue-500 font-mono'
-                      rows={6}
-                      placeholder='Enter mock tool response...'
-                    />
-                  </div>
-                </div>
-              )}
-
               {/* Model Change */}
               <div className='mb-4'>
                 <label className='block text-sm font-medium text-slate-300 mb-2'>
@@ -1449,7 +1180,7 @@ export default function ReplayInterface({
                   value={getMapValueOr(
                     modifications.modelChanges,
                     selectedNode.id,
-                    selectedNode.model ?? 'gpt-3.5-turbo'
+                    selectedNode.model ?? 'gpt-4o-mini'
                   )}
                   onChange={(e) =>
                     handleModificationChange(
@@ -1460,9 +1191,11 @@ export default function ReplayInterface({
                   }
                   className='w-full bg-slate-600 border border-slate-500 rounded-md px-3 py-2 text-sm text-white focus:ring-blue-500 focus:border-blue-500'
                 >
-                  <option value='gpt-3.5-turbo'>GPT-3.5 Turbo</option>
-                  <option value='gpt-4'>GPT-4</option>
+                  <option value='gpt-4o-mini'>GPT-4o mini</option>
+                  <option value='gpt-4o'>GPT-4o</option>
                   <option value='gpt-4-turbo'>GPT-4 Turbo</option>
+                  <option value='gpt-4'>GPT-4</option>
+                  <option value='gpt-3.5-turbo'>GPT-3.5 Turbo</option>
                   <option value='claude-3-sonnet'>Claude 3 Sonnet</option>
                 </select>
               </div>
@@ -1527,27 +1260,8 @@ export default function ReplayInterface({
                   </span>
                 </label>
 
-                <div>
-                  <label className='block text-sm font-medium text-slate-300 mb-2'>
-                    Max Replay Depth
-                  </label>
-                  <input
-                    type='number'
-                    value={options.maxReplayDepth}
-                    onChange={(e) =>
-                      setOptions((prev) => ({
-                        ...prev,
-                        maxReplayDepth: parseInt(e.target.value),
-                      }))
-                    }
-                    className='w-full bg-slate-600 border border-slate-500 rounded-md px-3 py-2 text-sm text-white focus:ring-blue-500 focus:border-blue-500'
-                    min='1'
-                    max='50'
-                  />
-                </div>
-
-                {/* --- Live Replay Options --- */}
-                <label className='flex items-center gap-3 mt-3'>
+                {/* Live mode toggle (optional) */}
+                <label className='flex items-center gap-3'>
                   <input
                     type='checkbox'
                     checked={!!options.liveMode}
@@ -1560,7 +1274,7 @@ export default function ReplayInterface({
                     className='rounded border-slate-500 bg-slate-600 text-blue-500 focus:ring-blue-500'
                   />
                   <span className='text-sm text-slate-300'>
-                    Live mode (re-run changed LLM nodes)
+                    Live LLM call (Socket) for replay
                   </span>
                 </label>
 
@@ -1574,7 +1288,7 @@ export default function ReplayInterface({
                       step='0.1'
                       min='0'
                       max='2'
-                      value={options.temperature ?? 0.7}
+                      value={options.temperature ?? 0.0}
                       onChange={(e) =>
                         setOptions((prev) => ({
                           ...prev,
@@ -1592,7 +1306,7 @@ export default function ReplayInterface({
                       type='number'
                       min={1}
                       max={8192}
-                      value={options.maxTokens ?? 512}
+                      value={options.maxTokens ?? 150}
                       onChange={(e) =>
                         setOptions((prev) => ({
                           ...prev,
@@ -1632,12 +1346,7 @@ export default function ReplayInterface({
             </button>
             <button
               onClick={handleStartReplay}
-              disabled={
-                isReplaying ||
-                safetyAnalysis?.mode === ReplayMode.BLOCKED ||
-                !Array.isArray(normalizedTrace.nodes) ||
-                normalizedTrace.nodes.length === 0
-              }
+              disabled={!normalizedTrace.nodes?.length || isReplaying}
               className='px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-600 disabled:cursor-not-allowed text-white text-sm font-medium rounded-md transition-colors flex items-center gap-2'
             >
               {isReplaying ? (
@@ -1655,18 +1364,16 @@ export default function ReplayInterface({
           </div>
         </div>
 
-        {/* 🧩 Replay result output */}
+        {/* Inline result/debug */}
         <div className='mt-4'>
           {isReplaying && (
             <p className='text-xs text-slate-400'>⏳ Running replay…</p>
           )}
-
           {replayPacket && (
             <pre className='mt-2 bg-slate-900/70 border border-slate-700 rounded-lg p-3 text-xs text-green-300 overflow-x-auto whitespace-pre-wrap'>
-              {JSON.stringify(replayPacket?.result ?? replayPacket, null, 2)}
+              {JSON.stringify(replayPacket, null, 2)}
             </pre>
           )}
-
           {replayText && !isReplaying && (
             <p className='mt-2 text-xs text-cyan-300'>🧠 {replayText}</p>
           )}

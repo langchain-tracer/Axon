@@ -1,23 +1,16 @@
-// src/hooks/index.ts
-// Custom React hooks for Agent Trace Visualizer
-
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Node, Edge } from 'reactflow';
 import { io, Socket } from 'socket.io-client';
-import createLLMCaller from '../utils/createLLMCaller';
 import type {
   UseTraceDataOptions,
   UseAnomalyDetectionOptions,
   TraceStatistics,
-  Anomaly,
-  ReplayResult,
   TraceComparison,
   LayoutType,
-  FilterCriteria,
 } from '../types';
 
 // ---- Socket singleton (shared by hooks) ------------------------------------
-const replaySocket: Socket = io('/', {
+export const replaySocket: Socket = io('/', {
   path: '/socket.io',
   transports: ['websocket'],
   auth: { projectName: 'dashboard' },
@@ -51,19 +44,16 @@ export const useTraceData = (
       }
 
       const data = await response.json();
-      console.log(data, 'data/n/n/n/n');
-      console.log(data.nodes, 'data.nodes/n/n/n/n');
-      console.log(data.edges, 'data.edges/n/n/n/n');
 
       // Convert backend format to ReactFlow format
       const flowNodes: Node[] = data.nodes.map((node: any) => ({
         id: node.id,
         type: node.type,
-        position: { x: 0, y: 0 }, // Will be layouted
+        position: { x: 0, y: 0 }, // layout is applied elsewhere
         data: node,
       }));
 
-      const flowEdges: Edge[] = data.edges.map((edge: any, index: number) => ({
+      const flowEdges: Edge[] = data.edges.map((edge: any) => ({
         id: `e${edge.source}-${edge.target}`,
         source: edge.source,
         target: edge.target,
@@ -89,6 +79,22 @@ export const useTraceData = (
     }
   }, [fetchTrace, autoRefresh, refreshInterval]);
 
+  // 🔁 Refetch this trace when a replay completes for this traceId
+  useEffect(() => {
+    const handler = (evt: Event) => {
+      const detail = (evt as CustomEvent)?.detail;
+      if (!traceId) return;
+      if (detail?.traceId && detail.traceId !== traceId) return; // only refetch for the active trace
+      fetchTrace();
+    };
+    window.addEventListener('axon:replay_llm_result', handler as EventListener);
+    return () =>
+      window.removeEventListener(
+        'axon:replay_llm_result',
+        handler as EventListener
+      );
+  }, [traceId, fetchTrace]);
+
   return { nodes, edges, loading, error, refetch: fetchTrace };
 };
 
@@ -107,73 +113,77 @@ interface RealtimeUpdate {
 export const useRealtimeUpdates = (traceId: string | null) => {
   const [connected, setConnected] = useState(false);
   const [lastUpdate, setLastUpdate] = useState<RealtimeUpdate | null>(null);
-  const wsRef = useRef<Socket | null>(null);
-  const reconnectTimeoutRef = useRef<number>();
 
-  const connect = useCallback(() => {
+  useEffect(() => {
     if (!traceId) return;
 
-    // ✅ Use relative path so Vite proxy can redirect to backend:3001
-    const socket = io('/', {
-      path: '/socket.io',
-      transports: ['websocket'], // 👈 force websocket (no polling)
-      auth: { projectName: 'dashboard' },
-      reconnectionAttempts: 5,
-      reconnectionDelay: 2000,
-    });
+    const socket = replaySocket;
 
-    wsRef.current = socket;
-
-    socket.on('connect', () => {
+    const onConnect = () => {
       console.log('🔌 Socket.IO connected:', socket.id);
       setConnected(true);
       socket.emit('watch_trace', traceId);
-    });
+    };
 
-    socket.on('trace_data', (data) => {
-      console.log('📦 trace_data', data);
+    const onTraceData = (data: any) => {
       setLastUpdate({
         type: 'trace_complete',
         traceId,
         timestamp: Date.now(),
         data,
       });
-    });
+    };
 
-    socket.on('new_event', (event) => {
-      console.log('✨ new_event', event);
+    const onNewEvent = (event: any) => {
       setLastUpdate({
         type: 'node_complete',
         traceId,
         timestamp: Date.now(),
         data: event,
       });
-    });
+    };
 
-    socket.on('disconnect', (reason) => {
+    // 🎯 NEW: react to replay completion (not persisted) and broadcast a DOM event
+    const onReplayLLMResult = (payload: any) => {
+      console.log('🎯 replay_llm_result', payload);
+      setLastUpdate({
+        type: 'trace_complete',
+        traceId,
+        timestamp: Date.now(),
+        data: payload,
+      });
+      // Let any interested hooks/components refetch
+      window.dispatchEvent(
+        new CustomEvent('axon:replay_llm_result', { detail: payload })
+      );
+    };
+
+    const onDisconnect = (reason: any) => {
       console.log('⚠️ Socket.IO disconnected:', reason);
       setConnected(false);
-      reconnectTimeoutRef.current = window.setTimeout(() => {
-        console.log('🔄 Attempting to reconnect...');
-        connect();
-      }, 3000);
-    });
+    };
 
-    socket.on('connect_error', (err) => {
-      console.error('❌ Socket connection error:', err.message);
-    });
+    const onError = (err: any) => {
+      console.error('❌ Socket connection error:', err?.message || err);
+    };
 
+    socket.on('connect', onConnect);
+    socket.on('trace_data', onTraceData);
+    socket.on('new_event', onNewEvent);
+    socket.on('replay_llm_result', onReplayLLMResult);
+    socket.on('disconnect', onDisconnect);
+    socket.on('connect_error', onError);
+
+    // Cleanup listeners (do not disconnect shared socket)
     return () => {
-      socket.disconnect();
-      if (reconnectTimeoutRef.current)
-        clearTimeout(reconnectTimeoutRef.current);
+      socket.off('connect', onConnect);
+      socket.off('trace_data', onTraceData);
+      socket.off('new_event', onNewEvent);
+      socket.off('replay_llm_result', onReplayLLMResult);
+      socket.off('disconnect', onDisconnect);
+      socket.off('connect_error', onError);
     };
   }, [traceId]);
-
-  useEffect(() => {
-    const cleanup = connect();
-    return cleanup;
-  }, [connect]);
 
   return { connected, lastUpdate };
 };
@@ -224,7 +234,7 @@ export const useAnomalyDetection = (
   nodes: Node[],
   options: UseAnomalyDetectionOptions = {}
 ) => {
-  const { enabled = true, config, budgets } = options;
+  const { enabled = true } = options;
   const [anomalies, setAnomalies] = useState<DetectionAnomaly[]>([]);
 
   useEffect(() => {
@@ -236,7 +246,7 @@ export const useAnomalyDetection = (
     const detector = new AnomalyDetector(nodes, []);
     const result = detector.detectAnomalies();
     setAnomalies(result.anomalies);
-  }, [nodes, enabled, config, budgets]);
+  }, [nodes, enabled]);
 
   const dismissAnomaly = useCallback((anomalyId: string) => {
     setAnomalies((prev) => prev.filter((a) => a.id !== anomalyId));
@@ -320,10 +330,7 @@ export const useDebounce = <T>(value: T, delay: number = 300): T => {
   const [debouncedValue, setDebouncedValue] = useState<T>(value);
 
   useEffect(() => {
-    const handler = setTimeout(() => {
-      setDebouncedValue(value);
-    }, delay);
-
+    const handler = setTimeout(() => setDebouncedValue(value), delay);
     return () => clearTimeout(handler);
   }, [value, delay]);
 
@@ -392,7 +399,7 @@ export const useExport = (nodes: Node[], edges: Edge[]) => {
 
       try {
         switch (format) {
-          case 'json':
+          case 'json': {
             const jsonData = exportToJSON(nodes, edges, {
               includeMetadata: true,
             });
@@ -402,16 +409,17 @@ export const useExport = (nodes: Node[], edges: Edge[]) => {
               'application/json'
             );
             break;
-
-          case 'csv':
+          }
+          case 'csv': {
             const csvData = exportToCSV(nodes);
             downloadFile(csvData, `trace-${Date.now()}.csv`, 'text/csv');
             break;
-
+          }
           case 'png':
-          case 'svg':
+          case 'svg': {
             await exportGraphAsImage(format, `trace-${Date.now()}.${format}`);
             break;
+          }
         }
       } catch (error) {
         console.error('Export failed:', error);
@@ -449,51 +457,143 @@ export const useAutoLayout = (
   return layoutedNodes;
 };
 
-// ============================================================================
-// useReplay - Handle replay functionality
-// ============================================================================
 
-import {
-  ReplayEngine,
-  ReplayMode,
-  type ReplayOptions,
-  type ReplayModifications,
-} from '../utils/ReplayEngine';
-
-// (legacy engine-based hook kept commented for now)
-
-// Minimal LLM/replay stream hook with socket result
-// --- replace the whole useReplay with this ---
 export function useReplay() {
-  const [output, setOutput] = useState('');
   const [loading, setLoading] = useState(false);
+  const [output, setOutput] = useState<string>('');
   const [result, setResult] = useState<any>(null);
-  const socket = replaySocket; // ✅ reuse shared singleton
+  const deltaBufferRef = useRef<string[]>([]);
 
-  useEffect(() => {
-    const onReplayResult = (packet: any) => {
-      console.log('🧩 Received replay_result from backend:', packet);
-      setResult(packet);
-      setLoading(false);
-      if (packet?.message) setOutput(String(packet.message));
-    };
-    socket.on('replay_result', onReplayResult);
-    return () => socket.off('replay_result', onReplayResult);
-  }, [socket]);
+  const genId = () =>
+    (globalThis as any)?.crypto?.randomUUID
+      ? (globalThis as any).crypto.randomUUID()
+      : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
   const replayFromNode = useCallback(
-    async (nodeId: string, payload: any) => {
-      if (!socket) return;
-      const traceId = payload?.traceId ?? null;
+    async (startNodeId: string, opts: any) => {
       setLoading(true);
-      setOutput('');
       setResult(null);
+      setOutput('');
+      deltaBufferRef.current = [];
 
-      if (traceId) socket.emit('watch_trace', traceId); // ✅ join room
-      console.log('🚀 Emitting replay_request:', { nodeId, payload });
-      socket.emit('replay_request', { nodeId, ...payload });
+      const requestId = genId();
+      const model = opts?.model || 'gpt-4o-mini';
+      const stream = opts?.stream ?? true;
+
+      const messages =
+        Array.isArray(opts?.messages) && opts.messages.length
+          ? opts.messages.map((m: any) => ({
+              role: (m.role || 'user') as 'system' | 'user' | 'assistant',
+              content: m.content || '',
+            }))
+          : [
+              {
+                role: 'user' as const,
+                content: opts?.prompt || opts?.promptText || 'Replay from node.',
+              },
+            ];
+
+      const socket = replaySocket;
+
+      // STREAM DELTAS
+      const onDelta = (p: any) => {
+        if (p?.requestId !== requestId) return;
+        const delta = p?.delta || '';
+        // accumulate for final payload and keep UI output updated
+        deltaBufferRef.current.push(delta);
+        setOutput((prev) => prev + delta);
+        // 🔊 bubble up to the app
+        window.dispatchEvent(
+          new CustomEvent('axon:replay_llm_result', {
+            detail: { requestId, delta, append: true },
+          })
+        );
+        console.log('[WS<-] replay_llm_delta', p);
+      };
+
+      // MODEL INTERMEDIATE / FINAL TEXT RESPONSE (pre-final)
+      const onResponse = (p: any) => {
+        if (p?.requestId !== requestId) return;
+        console.log('[WS<-] replay_llm_response', p);
+        const payload = {
+          ok: !!p?.ok,
+          text: p?.text || '',
+          requestId,
+          timestamp: Date.now(),
+        };
+        // keep output consistent even if no streaming happened
+        if (!output && p?.text) setOutput(p.text);
+        setResult((prev: any) => ({ ...(prev || {}), ...payload }));
+        // 🔊 bubble up
+        window.dispatchEvent(
+          new CustomEvent('axon:replay_llm_result', { detail: payload })
+        );
+      };
+
+      // REPLAY SUMMARY / METRICS (final)
+      const onResult = (p: any) => {
+        if (p?.requestId !== requestId) return;
+        console.log('[WS<-] replay_result', p);
+        setLoading(false);
+
+        // normalize and store as "final" so parents can render results overlay
+        const finalPayload = {
+          requestId,
+          success: !!p?.success,
+          executedNodes: p?.executedNodes || [],
+          skippedNodes: p?.skippedNodes || [],
+          sideEffects: p?.sideEffects || [],
+          totalCost: p?.totalCost ?? 0,
+          totalLatency: p?.totalLatency ?? 0,
+          ok: p?.success, // convenience
+          // prefer our accumulated buffer; fall back to server text
+          text:
+            deltaBufferRef.current && deltaBufferRef.current.length > 0
+              ? deltaBufferRef.current.join('')
+              : p?.text ?? '',
+        };
+        setResult((prev: any) => ({ ...(prev || {}), ...finalPayload }));
+
+        // 🔊 bubble up final packet
+        window.dispatchEvent(
+          new CustomEvent('axon:replay_llm_result', { detail: finalPayload })
+        );
+
+        // cleanup listeners
+        socket.off('replay_llm_delta', onDelta);
+        socket.off('replay_llm_response', onResponse);
+        socket.off('replay_result', onResult);
+
+        // clear buffer after use
+        deltaBufferRef.current = [];
+      };
+
+      socket.on('replay_llm_delta', onDelta);
+      socket.on('replay_llm_response', onResponse);
+      socket.on('replay_result', onResult);
+
+      console.log('▶️ sending replay_llm_request', {
+        requestId,
+        model,
+        stream,
+        msgCount: messages.length,
+      });
+
+      socket.emit('replay_llm_request', {
+        requestId,
+        model,
+        messages,
+        temperature:
+          typeof opts?.temperature === 'number' ? opts.temperature : 0.7,
+        maxTokens: typeof opts?.maxTokens === 'number' ? opts.maxTokens : 512,
+        traceId: opts?.traceId ?? null,
+        startNodeId,
+        stream,
+      });
+
+      return requestId;
     },
-    [socket]
+    []
   );
 
   return { replayFromNode, result, loading, output };

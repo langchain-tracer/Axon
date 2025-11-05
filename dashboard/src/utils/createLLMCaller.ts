@@ -1,3 +1,4 @@
+// // src/utils/createLLMCaller.ts
 import { io, Socket } from 'socket.io-client';
 
 type Msg = { role: 'system' | 'user' | 'assistant'; content: string };
@@ -11,147 +12,146 @@ type CallArgs = {
   stream?: boolean;
 };
 
-let socket: import('socket.io-client').Socket | null = null;
+let socket: Socket | null = null;
 
-// async function getSocket() {
-//   if (socket?.connected || socket?.connecting) return socket!;
-//   socket = io('/', {
-//     path: '/socket.io',
-//     transports: ['websocket'],
-//     withCredentials: true,
-//     auth: { projectName: 'dashboard' },
-//   });
-//   return socket!;
-// }
-async function getSocket() {
+function genRequestId() {
+  return (globalThis as any)?.crypto?.randomUUID
+    ? (globalThis as any).crypto.randomUUID()
+    : `req_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+}
+
+async function getSocket(): Promise<Socket> {
   if (socket) return socket;
-  // Prefer local dep; fallback to CDN if missing
-  let io;
-  try {
-    ({ io } = await import('socket.io-client'));
-  } catch {
-    // Fallback: load the UMD bundle from the CDN and read the global `io`.
-    // This avoids TypeScript attempting to resolve types for a remote ES module specifier.
-    await new Promise<void>((resolve, reject) => {
-      const s = document.createElement('script');
-      s.src = 'https://cdn.socket.io/4.7.5/socket.io.min.js';
-      s.async = true;
-      s.onload = () => resolve();
-      s.onerror = () => reject(new Error('Failed to load socket.io from CDN'));
-      document.head.appendChild(s);
-    });
-    // The CDN UMD build exposes `io` on the global object.
-    // @ts-ignore - runtime-provided global from CDN bundle
-    io = (globalThis as any).io;
-    if (!io) throw new Error('socket.io not found on globalThis after loading CDN');
-  }
-  socket = io(import.meta.env.VITE_SOCKET_URL || 'http://localhost:3001', {
+
+  // ✅ Use relative URL and explicit path to match backend + Vite proxy
+  socket = io('/', {
+    path: '/socket.io',
     transports: ['websocket'],
     withCredentials: true,
+    auth: { projectName: 'dashboard' },
+    reconnectionAttempts: 5,
+    reconnectionDelay: 2000,
   });
+
   return socket;
-}
-function rid() {
-  return (
-    globalThis.crypto?.randomUUID?.() ??
-    `req_${Date.now()}_${Math.random().toString(36).slice(2)}`
-  );
 }
 
 // DEFAULT EXPORT to avoid named-import mismatch
 export default async function createSocketLLMCaller() {
-  // return ({
-  //   model,
-  //   messages,
-  //   temperature,
-  //   maxTokens,
-  //   traceId,
-  //   signal,
-  //   stream,
-  // }: CallArgs) =>
-  //   new Promise<string>((resolve, reject) => {
-  //     const s = getSocket();
-  //     const requestId = rid();
-  //     let acc = '';
-
-  //     const onResponse = (m: any) => {
-  //       if (m?.requestId !== requestId) return;
-  //       cleanup();
-  //       if (m.ok) resolve(m.text ?? acc ?? '');
-  //       else reject(new Error(m.error || 'LLM failed'));
-  //     };
-
-  //     const onDelta = (m: any) => {
-  //       if (m?.requestId !== requestId) return;
-  //       if (typeof m.delta === 'string') acc += m.delta;
-  //     };
-
-  //     const onAbort = () => {
-  //       cleanup();
-  //       reject(new Error('aborted'));
-  //     };
-
-  //     const cleanup = () => {
-  //       s.off('replay_llm_response', onResponse);
-  //       s.off('replay_llm_delta', onDelta);
-  //       signal?.removeEventListener?.('abort', onAbort);
-  //     };
-
-  //     s.on('replay_llm_response', onResponse);
-  //     s.on('replay_llm_delta', onDelta);
-  //     signal?.addEventListener?.('abort', onAbort);
-
-  //     s.emit('replay_llm_request', {
-  //       requestId,
-  //       traceId,
-  //       model,
-  //       messages,
-  //       temperature,
-  //       maxTokens,
-  //       stream: !!stream,
-  //     });
-  //   });
   const s = await getSocket();
   if (!s) throw new Error('Socket not available');
 
-  function send(messages: { role: 'system' | 'user' | 'assistant'; content: string }[], opts?: {
-    model?: string;
-    stream?: boolean;
-    temperature?: number;
-    maxTokens?: number;
-  }) {
-    return new Promise<{ ok: boolean; text?: string; error?: string }>((resolve, reject) => {
-      const requestId = crypto.randomUUID();
-
+  /**
+   * Send a replay LLM request. Resolves on the **final** response/result for THIS requestId.
+   * Also exposes onDelta/onResponse to attach global handlers (scoped here by requestId).
+   */
+  function send(
+    messages: { role?: 'system' | 'user' | 'assistant'; content: string }[],
+    opts?: {
+      model?: string;
+      stream?: boolean;
+      temperature?: number;
+      maxTokens?: number;
+      traceId?: string | null;
+    }
+  ): Promise<{ ok: boolean; text?: string; error?: string; requestId: string }> {
+    return new Promise((resolve, reject) => {
       if (!s) {
         reject(new Error('Socket not available'));
         return;
       }
 
+      const requestId = genRequestId();
+      const model = opts?.model ?? 'gpt-4o-mini';
+      const stream = !!opts?.stream;
+      const temperature = typeof opts?.temperature === 'number' ? opts.temperature : 0.7;
+      const maxTokens = typeof opts?.maxTokens === 'number' ? opts.maxTokens : 512;
+      const traceId = opts?.traceId ?? null;
+
+      // Normalize messages for safety
+      const normalizedMessages = Array.isArray(messages)
+        ? messages.map((m) => ({
+            role: (m.role || 'user') as 'system' | 'user' | 'assistant',
+            content: m.content || '',
+          }))
+        : [{ role: 'user' as const, content: String(messages || '') }];
+
+      // Per-request listeners (scoped by requestId)
       const onResponse = (msg: any) => {
-        if (msg.requestId !== requestId) return;
-        s.off('replay_llm_response', onResponse);
-        resolve(msg);
+        if (msg?.requestId !== requestId) return;
+        // Keep listening for replay_result to cleanup; resolve on response, though
+        cleanupExceptResult();
+        resolve({ ok: !!msg?.ok, text: msg?.text, error: msg?.error, requestId });
       };
 
-      s.on('replay_llm_response', onResponse);
+      const onResult = (msg: any) => {
+        if (msg?.requestId !== requestId) return;
+        cleanupAll();
+        // If send resolved already via onResponse, this is a no-op.
+        // If not, resolve here as a fallback with minimal shape.
+        if (typeof (resolve as any)._called === 'boolean') return;
+        resolve({ ok: !!msg?.success, text: undefined, error: msg?.error, requestId });
+      };
 
+      const cleanupExceptResult = () => {
+        s.off('replay_llm_response', onResponse);
+        // keep onResult to ensure cleanup on result too
+      };
+      const cleanupAll = () => {
+        s.off('replay_llm_delta', onDeltaPassthrough);
+        s.off('replay_llm_response', onResponse);
+        s.off('replay_result', onResult);
+      };
+
+      // Optional: passthrough delta logging (guarded by requestId)
+      const onDeltaPassthrough = (d: any) => {
+        if (d?.requestId !== requestId) return;
+        // no-op here; consumers can subscribe via onDelta(..)
+        // console.debug('[WS<-] replay_llm_delta', d);
+      };
+
+      s.on('replay_llm_delta', onDeltaPassthrough);
+      s.on('replay_llm_response', onResponse);
+      s.on('replay_result', onResult);
+
+      // Fire request
+      // console.log('▶️ sending replay_llm_request', { requestId, model, stream, msgCount: normalizedMessages.length });
       s.emit('replay_llm_request', {
         requestId,
-        model: opts?.model ?? 'gpt-3.5-turbo',
-        messages,
-        stream: !!opts?.stream,
-        temperature: opts?.temperature ?? 0.7,
-        maxTokens: opts?.maxTokens ?? 512,
+        model,
+        messages: normalizedMessages,
+        temperature,
+        maxTokens,
+        stream,
+        traceId,
       });
-    });
-}
 
-function onDelta(cb: (delta: { requestId: string; delta: string }) => void) {
+      // Abort support (optional)
+      if (opts?.traceId && typeof AbortSignal !== 'undefined') {
+        opts.signal?.addEventListener('abort', () => {
+          cleanupAll();
+          reject(new DOMException('Aborted', 'AbortError'));
+        });
+      }
+    });
+  }
+
+  // Attach a delta handler (do not wipe global listeners; only remove the passed one on re-register)
+  function onDelta(cb: (delta: { requestId: string; delta: string }) => void) {
     if (!s) throw new Error('Socket not available');
-    s.off('replay_llm_delta');
+    s.off('replay_llm_delta', cb);
     s.on('replay_llm_delta', cb);
   }
 
-  return { send, onDelta };
+  // Attach a final response handler
+  function onResponse(cb: (resp: { requestId: string; ok: boolean; text?: string; error?: string }) => void) {
+    if (!s) throw new Error('Socket not available');
+    s.off('replay_llm_response', cb);
+    s.on('replay_llm_response', cb);
+  }
+
+  // Optional: expose socket for debugging (not required by callers)
+  // ;(window as any).__axonSocket = s;
+
+  return { send, onDelta, onResponse };
 }

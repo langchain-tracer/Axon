@@ -5,7 +5,9 @@
   "description": "Backend for Agent Trace Visualizer with SQLite",
   "main": "dist/server.js",
   "scripts": {
-    "dev": "tsx watch src/server.ts",
+    "dev": "concurrently -k -n backend,dashboard -c green,blue \"npm run dev:backend\" \"npm run dev:dashboard\"",
+  "dev:backend": "TSX_TSCONFIG_PATHS=0 tsx watch src/server.ts",
+  "dev:dashboard": "vite",
     "build": "tsc",
     "start": "node dist/server.js",
     "test": "vitest",
