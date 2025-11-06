@@ -1021,16 +1021,17 @@ io.on("connection", (socket) => {
 // ============================================================================
 
 const PORT = process.env.PORT || 3000;
+const HOST = process.env.HOST || '127.0.0.1'; // Use 127.0.0.1 to avoid EPERM on macOS
 
-httpServer.listen(PORT, () => {
+httpServer.listen(PORT, HOST, () => {
   console.log(`
 ╔════════════════════════════════════════════╗
 ║   🚀 Agent Trace Backend Server           ║
 ╠════════════════════════════════════════════╣
-║   HTTP:      http://localhost:${PORT}      ║
-║   WebSocket: ws://localhost:${PORT}        ║
-║   Health:    http://localhost:${PORT}/health ║
-║   Traces:    http://localhost:${PORT}/api/traces ║
+║   HTTP:      http://${HOST}:${PORT}      ║
+║   WebSocket: ws://${HOST}:${PORT}        ║
+║   Health:    http://${HOST}:${PORT}/health ║
+║   Traces:    http://${HOST}:${PORT}/api/traces ║
 ╚════════════════════════════════════════════╝
   `);
   console.log("✅ Server ready to receive traces!\n");

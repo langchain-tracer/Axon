@@ -1,0 +1,44 @@
+version: '3.8'
+
+services:
+  # Backend with hot reload
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.dev
+    volumes:
+      # Mount source code for hot reload
+      - ./backend/src:/app/src:ro
+      # Persist node_modules
+      - backend-node-modules:/app/node_modules
+    environment:
+      - NODE_ENV=development
+      - LOG_LEVEL=debug
+    command: npm run dev
+
+  # Dashboard with Vite dev server
+  dashboard:
+    build:
+      context: ./dashboard
+      dockerfile: Dockerfile.dev
+    ports:
+      - "5173:5173"  # Vite dev server
+    volumes:
+      # Mount source code for hot reload
+      - ./dashboard/src:/app/src:ro
+      - ./dashboard/public:/app/public:ro
+      - ./dashboard/index.html:/app/index.html:ro
+      - ./dashboard/vite.config.ts:/app/vite.config.ts:ro
+      - ./dashboard/tailwind.config.js:/app/tailwind.config.js:ro
+      - ./dashboard/postcss.config.js:/app/postcss.config.js:ro
+      # Persist node_modules
+      - dashboard-node-modules:/app/node_modules
+    environment:
+      - NODE_ENV=development
+      - VITE_API_URL=http://localhost:3000
+    command: npm run dev -- --host 0.0.0.0
+
+volumes:
+  backend-node-modules:
+  dashboard-node-modules:
+

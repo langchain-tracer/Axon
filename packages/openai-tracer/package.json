@@ -1,6 +1,6 @@
 {
   "name": "@agent-trace/openai-tracer",
-  "version": "1.0.0",
+  "version": "1.0.2",
   "description": "OpenAI Function Calling tracer for Agent Trace Visualizer",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
