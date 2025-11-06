@@ -1,11 +1,13 @@
 {
   "name": "@agent-trace/cli",
-  "version": "1.0.0",
+  "version": "1.0.2",
   "description": "CLI tool for Agent Trace Visualizer - Monitor LangChain agents in real-time",
   "type": "module",
   "main": "./dist/index.js",
   "bin": {
-    "agent-trace": "./dist/cli.js"
+    "agent-trace": "./dist/cli.js",
+    "axon": "./dist/cli.js",
+    "axon-ai": "./dist/cli.js"
   },
   "files": [
     "dist",
