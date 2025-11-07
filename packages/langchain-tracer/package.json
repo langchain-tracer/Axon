@@ -1,6 +1,6 @@
 {
   "name": "@axon-ai/langchain-tracer",
-  "version": "1.0.0",
+  "version": "1.0.2",
   "description": "LangChain tracing callback handler for AXON",
   "type": "module",
   "main": "./dist/index.js",
