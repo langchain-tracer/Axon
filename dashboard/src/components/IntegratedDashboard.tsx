@@ -24,7 +24,11 @@ import {
     GitBranch,
     Brain,
     Play,
-    Eye
+    Eye, 
+    Zap, 
+    Wifi,
+    Link,
+    Unplug
 } from "lucide-react";
 
 import { TraceList } from "./TraceList";
@@ -451,15 +455,13 @@ const IntegratedDashboardContent = () => {
         if (connected) {
             return (
                 <div className="flex items-center gap-2 bg-green-500/10 border border-green-500/30 px-3 py-1.5 rounded-md">
-                    <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
-                    <span className="text-sm font-medium text-green-400">Connected</span>
+                    <Zap className="text-sm font-medium text-green-400"/> 
                 </div>
             );
         }
         return (
             <div className="flex items-center gap-2 bg-red-500/10 border border-red-500/30 px-3 py-1.5 rounded-md">
-                <div className="w-2 h-2 bg-red-400 rounded-full"></div>
-                <span className="text-sm font-medium text-red-400">Disconnected</span>
+                <Unplug className="text-sm font-medium text-red-400"/>
             </div>
         );
     };
@@ -478,11 +480,20 @@ const IntegratedDashboardContent = () => {
                 <div className="bg-slate-900 border-b border-slate-700 p-4 flex items-center justify-between">
                     <div className="flex items-center gap-4">
                         <img 
-                            src="/logo-latest.svg" 
-                            alt="Agent Trace Visualizer" 
-                            className="h-8 w-auto"
+                            src="/Axon-Web-Favicon.svg" 
+                            alt="AXON" 
+                            className="h-[50px] w-[50px] flex-shrink-0"
                         />
-                        {getConnectionStatus()}
+                        <img 
+                            src="/AXON.svg" 
+                            alt="AXON-TITLE" 
+                            className="h-[80px] w-[80px] flex-shrink-0"
+                        />
+                      
+                       
+                       <div>
+                        
+                       </div>
                     </div>
                     <div className="flex items-center gap-4">
                         <div className="flex gap-1 bg-slate-800 border border-slate-700 rounded-lg p-1">
@@ -571,8 +582,8 @@ const IntegratedDashboardContent = () => {
                                         : 'text-slate-300 hover:text-white hover:bg-slate-700'
                                 }`}
                             >
-                                <Brain className="w-4 h-4 inline mr-1" />
-                                AI Anomalies
+                                <Brain className="w-4 h-4 inline mr-1" /> 
+                                IAD
                             </button>
                             <button 
                                 onClick={() => setViewMode('replay')} 
@@ -586,6 +597,14 @@ const IntegratedDashboardContent = () => {
                                 Replay
                             </button>
                         </div>
+                        <div>
+
+                        </div>
+                        {getConnectionStatus()}
+                        <div>
+
+                        </div>
+
                         <div className="flex items-center gap-2 bg-green-600/20 border border-green-500 px-4 py-2 rounded-lg font-bold">
                             <DollarSign className="w-4 h-4 text-green-400" />
                             <span className="text-green-400">${stats.totalCost.toFixed(4)}</span>
@@ -618,6 +637,111 @@ const IntegratedDashboardContent = () => {
                         </div>
                     ) : (
                         <>
+                            {/* Conversation Overview - Show human input and agent output */}
+                            {nodes.length > 0 && (
+                                <div className="bg-slate-900 border-b border-slate-700 p-4">
+                                    <div className="max-w-5xl mx-auto space-y-3">
+                                        {/* Human Input and Agent Output */}
+                                        {(() => {
+                                            // Find the root chain (AgentExecutor) - it should have chainInputs and chainOutputs
+                                            // and be one of the earliest nodes (parent of other chains)
+                                            const rootChain = nodes.find(n => 
+                                                n.data.type?.includes('chain') && 
+                                                n.data.chainInputs && 
+                                                n.data.chainOutputs &&
+                                                (!n.data.parentRunId || n.data.chainName?.toLowerCase().includes('agent'))
+                                            );
+                                            
+                                            if (!rootChain) return null;
+                                            
+                                            // Extract user input
+                                            let displayInput = '';
+                                            try {
+                                                const inputData = typeof rootChain.data.chainInputs === 'string' 
+                                                    ? JSON.parse(rootChain.data.chainInputs) 
+                                                    : rootChain.data.chainInputs;
+                                                
+                                                // Extract the most relevant field
+                                                if (inputData.input) {
+                                                    displayInput = inputData.input;
+                                                } else if (inputData.question) {
+                                                    displayInput = inputData.question;
+                                                } else if (inputData.query) {
+                                                    displayInput = inputData.query;
+                                                } else if (typeof inputData === 'string') {
+                                                    displayInput = inputData;
+                                                } else {
+                                                    displayInput = JSON.stringify(inputData, null, 2);
+                                                }
+                                            } catch {
+                                                displayInput = typeof rootChain.data.chainInputs === 'string' 
+                                                    ? rootChain.data.chainInputs 
+                                                    : JSON.stringify(rootChain.data.chainInputs, null, 2);
+                                            }
+                                            
+                                            // Extract agent output from the same root chain
+                                            let displayOutput = '';
+                                            try {
+                                                const outputData = typeof rootChain.data.chainOutputs === 'string' 
+                                                    ? JSON.parse(rootChain.data.chainOutputs) 
+                                                    : rootChain.data.chainOutputs;
+                                                
+                                                // Extract the most relevant field
+                                                if (outputData.output) {
+                                                    displayOutput = outputData.output;
+                                                } else if (outputData.answer) {
+                                                    displayOutput = outputData.answer;
+                                                } else if (outputData.result) {
+                                                    displayOutput = outputData.result;
+                                                } else if (typeof outputData === 'string') {
+                                                    displayOutput = outputData;
+                                                } else {
+                                                    displayOutput = JSON.stringify(outputData, null, 2);
+                                                }
+                                            } catch {
+                                                displayOutput = typeof rootChain.data.chainOutputs === 'string' 
+                                                    ? rootChain.data.chainOutputs 
+                                                    : JSON.stringify(rootChain.data.chainOutputs, null, 2);
+                                            }
+                                            
+                                            return (
+                                                <>
+                                                    {/* Human Input */}
+                                                    {displayInput && (
+                                                        <div className="flex gap-3">
+                                                            <div className="flex-shrink-0 w-8 h-8 rounded-full bg-blue-500/20 flex items-center justify-center">
+                                                                <span className="text-blue-400 font-bold">👤</span>
+                                                            </div>
+                                                            <div className="flex-1">
+                                                                <div className="text-xs font-semibold text-blue-400 mb-1">Human</div>
+                                                                <div className="text-sm text-white bg-slate-800 rounded-lg p-3 border border-slate-700 whitespace-pre-wrap">
+                                                                    {displayInput}
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    )}
+                                                    
+                                                    {/* Agent Output */}
+                                                    {displayOutput && (
+                                                        <div className="flex gap-3">
+                                                            <div className="flex-shrink-0 w-8 h-8 rounded-full bg-green-500/20 flex items-center justify-center">
+                                                                <span className="text-green-400 font-bold">🤖</span>
+                                                            </div>
+                                                            <div className="flex-1">
+                                                                <div className="text-xs font-semibold text-green-400 mb-1">Agent</div>
+                                                                <div className="text-sm text-white bg-slate-800 rounded-lg p-3 border border-slate-700 whitespace-pre-wrap">
+                                                                    {displayOutput}
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    )}
+                                                </>
+                                            );
+                                        })()}
+                                    </div>
+                                </div>
+                            )}
+                            
                             {/* Render different views based on viewMode */}
                             {viewMode === 'flow' && (
                                 <div className="flex-1 relative">
@@ -675,18 +799,14 @@ const IntegratedDashboardContent = () => {
                             {viewMode === 'cost' && (
                                 <CostView 
                                     nodes={nodes.map(n => n.data)}
-                                    edges={edges.map(e => ({
-                                        source: e.source,
-                                        target: e.target,
-                                        type: e.data?.type || 'data_flow',
-                                        weight: e.data?.weight || 1
-                                    }))}
-                                    onNodeClick={(node) => {
+                                    onNodeSelect={(node) => {
                                         const reactFlowNode = nodes.find(n => n.data.id === node.id);
                                         if (reactFlowNode) {
-                                            handleNodeClick({} as any, reactFlowNode);
+                                            setSelectedNode(reactFlowNode);
+                                            setShowReplaySidebar(true);
                                         }
                                     }}
+                                    onShowProjections={() => setViewMode('projections')}
                                 />
                             )}
                             
@@ -696,7 +816,8 @@ const IntegratedDashboardContent = () => {
                                     onNodeSelect={(node) => {
                                         const reactFlowNode = nodes.find(n => n.data.id === node.id);
                                         if (reactFlowNode) {
-                                            handleNodeClick({} as any, reactFlowNode);
+                                            setSelectedNode(reactFlowNode);
+                                            setShowReplaySidebar(true);
                                         }
                                     }}
                                 />
@@ -705,16 +826,11 @@ const IntegratedDashboardContent = () => {
                             {viewMode === 'dependency' && (
                                 <DependencyView 
                                     nodes={nodes.map(n => n.data)}
-                                    edges={edges.map(e => ({
-                                        source: e.source,
-                                        target: e.target,
-                                        type: e.data?.type || 'data_flow',
-                                        weight: e.data?.weight || 1
-                                    }))}
-                                    onNodeClick={(node) => {
+                                    onNodeSelect={(node) => {
                                         const reactFlowNode = nodes.find(n => n.data.id === node.id);
                                         if (reactFlowNode) {
-                                            handleNodeClick({} as any, reactFlowNode);
+                                            setSelectedNode(reactFlowNode);
+                                            setShowReplaySidebar(true);
                                         }
                                     }}
                                 />
@@ -723,12 +839,14 @@ const IntegratedDashboardContent = () => {
                             {viewMode === 'timeline' && (
                                 <TimelineView 
                                     nodes={nodes.map(n => n.data)} 
-                                    onNodeSelect={(nodeId: any) => {
-                                        const reactFlowNode = nodes.find(n => n.id === nodeId);
+                                    onNodeSelect={(node: any) => {
+                                        const reactFlowNode = nodes.find(n => n.data.id === node.id);
                                         if (reactFlowNode) {
-                                            handleNodeClick({} as any, reactFlowNode);
+                                            setSelectedNode(reactFlowNode);
+                                            setShowReplaySidebar(true);
                                         }
                                     }} 
+                                    selectedNode={selectedNode?.data || null}
                                 />
                             )}
                             
