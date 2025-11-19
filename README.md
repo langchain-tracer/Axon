@@ -8,7 +8,7 @@ Axon is a powerful command-line interface (CLI) tool designed to provide real-ti
 - **Intuitive Dashboard**: Visualize agent traces, chain calls, and tool usage in a dedicated web interface.
 - **Easy Integration**: Seamlessly integrate with existing LangChain models, agents, and chains with minimal code changes.
 - **Project Organization**: Manage and view traces for multiple AI projects.
-- **Local Development Focus**: Designed for developers to quickly set up and debug their LangChain applications locally.s
+- **Local Development Focus**: Designed for developers to quickly set up and debug their LangChain applications locally.
 
 ## 🚀 Installation
 
