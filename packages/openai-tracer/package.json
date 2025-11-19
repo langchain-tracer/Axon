@@ -1,7 +1,7 @@
 {
-  "name": "@axon-ai/openai-tracer",
-  "version": "1.0.0",
-  "description": "OpenAI Function Calling tracer for AXON",
+  "name": "@agent-trace/openai-tracer",
+  "version": "1.0.2",
+  "description": "OpenAI Function Calling tracer for Agent Trace Visualizer",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
   "types": "dist/index.d.ts",
@@ -27,7 +27,7 @@
     "ai",
     "monitoring"
   ],
-  "author": "AXON Team",
+  "author": "Agent Trace Team",
   "license": "MIT",
   "dependencies": {
     "uuid": "^9.0.1",
