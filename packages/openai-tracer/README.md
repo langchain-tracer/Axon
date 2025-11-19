@@ -15,7 +15,7 @@ A comprehensive tracing solution for OpenAI Function Calling agents, providing d
 ## 📦 Installation
 
 ```bash
-npm install @agent-trace/openai-tracer openai
+npm install @axon-ai/openai-tracer openai
 ```
 
 ## 🎯 Quick Start
@@ -24,7 +24,7 @@ npm install @agent-trace/openai-tracer openai
 
 ```javascript
 import OpenAI from 'openai';
-import { createOpenAITracer, TracedOpenAI } from '@agent-trace/openai-tracer';
+import { createOpenAITracer, TracedOpenAI } from '@axon-ai/openai-tracer';
 
 // Initialize OpenAI client
 const openai = new OpenAI({
@@ -125,7 +125,7 @@ The tracer automatically sends data to the Agent Trace dashboard for visualizati
 ### Weather Agent
 
 ```javascript
-import { createOpenAITracer, TracedOpenAI } from '@agent-trace/openai-tracer';
+import { createOpenAITracer, TracedOpenAI } from '@axon-ai/openai-tracer';
 
 const tracer = createOpenAITracer({ projectName: 'weather-agent' });
 const tracedOpenAI = new TracedOpenAI(openai, tracer);
@@ -265,12 +265,6 @@ The tracer is designed for minimal overhead:
 ## 📄 License
 
 MIT License - see LICENSE file for details.
-
-## 🆘 Support
-
-- **Documentation**: [Agent Trace Docs](https://docs.agent-trace.com)
-- **Issues**: [GitHub Issues](https://github.com/agent-trace/openai-tracer/issues)
-- **Discord**: [Agent Trace Community](https://discord.gg/agent-trace)
 
 ## 🔄 Changelog
 

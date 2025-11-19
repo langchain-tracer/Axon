@@ -1,5 +1,5 @@
 /**
- * Auto-detection utilities for Agent Trace
+ * Auto-detection utilities for Axon
  * Automatically detects project configuration and sets up tracing
  */
 
@@ -8,7 +8,7 @@ import { TracingCallbackHandler } from './callback';
 import { TraceConfig } from './types';
 
 /**
- * Auto-detect project configuration from .agent-trace/config.json
+ * Auto-detect project configuration from .axon-ai/config.json
  */
 export async function detectProjectConfig(): Promise<Partial<TraceConfig> | null> {
   if (typeof (globalThis as any).window !== 'undefined') {
@@ -29,7 +29,7 @@ export async function detectProjectConfig(): Promise<Partial<TraceConfig> | null
     let depth = 0;
 
     while (depth < maxDepth) {
-      const configPath = path.join(currentDir, '.agent-trace', 'config.json');
+      const configPath = path.join(currentDir, '.axon-ai', 'config.json');
       
       if (fs.existsSync(configPath)) {
         try {
@@ -40,7 +40,7 @@ export async function detectProjectConfig(): Promise<Partial<TraceConfig> | null
             debug: false
           };
         } catch (error) {
-          console.warn('[AgentTrace] Failed to parse config file:', error);
+          console.warn('[Axon] Failed to parse config file:', error);
           return null;
         }
       }
@@ -56,7 +56,7 @@ export async function detectProjectConfig(): Promise<Partial<TraceConfig> | null
 
     return null;
   } catch (error) {
-    console.warn('[AgentTrace] Failed to load fs/path modules:', error);
+    console.warn('[Axon] Failed to load fs/path modules:', error);
     return null;
   }
 }
@@ -85,7 +85,7 @@ export async function detectProjectName(): Promise<string> {
           const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'));
           return packageJson.name || 'default';
         } catch (error) {
-          console.warn('[AgentTrace] Failed to parse package.json:', error);
+          console.warn('[Axon] Failed to parse package.json:', error);
           return 'default';
         }
       }
@@ -101,7 +101,7 @@ export async function detectProjectName(): Promise<string> {
 
     return 'default';
   } catch (error) {
-    console.warn('[AgentTrace] Failed to load fs/path modules:', error);
+    console.warn('[Axon] Failed to load fs/path modules:', error);
     return 'default';
   }
 }
@@ -110,7 +110,7 @@ export async function detectProjectName(): Promise<string> {
  * Create a tracer with auto-detected configuration
  */
 export async function createAutoTracer(overrides?: Partial<TraceConfig>): Promise<TracingCallbackHandler> {
-  // First try to detect from .agent-trace/config.json
+  // First try to detect from .axon-ai/config.json
   let config = await detectProjectConfig();
   
   // If not found, use package.json name and default endpoint
@@ -132,7 +132,7 @@ export async function createAutoTracer(overrides?: Partial<TraceConfig>): Promis
 }
 
 /**
- * Check if Agent Trace is properly configured in the current project
+ * Check if Axon is properly configured in the current project
  */
 export async function isAgentTraceConfigured(): Promise<boolean> {
   const config = await detectProjectConfig();

@@ -22,7 +22,7 @@ let backendProcess: ChildProcess | null = null;
 let dashboardProcess: ChildProcess | null = null;
 
 export async function startDashboard(options: StartOptions) {
-  const spinner = ora('Starting Agent Trace services...').start();
+  const spinner = ora('Starting Axon services...').start();
 
   try {
     // Check if ports are available
@@ -47,10 +47,10 @@ export async function startDashboard(options: StartOptions) {
       return;
     }
 
-    // Check if Agent Trace is initialized
-    const agentTraceConfig = join(projectRoot, '.agent-trace', 'config.json');
+    // Check if Axon is initialized
+    const agentTraceConfig = join(projectRoot, '.axon-ai', 'config.json');
     if (!existsSync(agentTraceConfig)) {
-      spinner.warn('Agent Trace not initialized in this project. Run "agent-trace init" first.');
+      spinner.warn('Axon not initialized in this project. Run "axon-ai init" first.');
       return;
     }
 
@@ -70,10 +70,10 @@ export async function startDashboard(options: StartOptions) {
     spinner.text = 'Waiting for dashboard to be ready...';
     await waitForService(`http://localhost:${dashboardPort}`, 15000);
 
-    spinner.succeed('Agent Trace services started successfully!');
+    spinner.succeed('Axon services started successfully!');
 
     // Display status
-    console.log(chalk.green('\n🚀 Agent Trace is now running!'));
+    console.log(chalk.green('\n🚀 Axon is now running!'));
     console.log(chalk.blue(`📊 Dashboard: http://localhost:${dashboardPort}`));
     console.log(chalk.blue(`🔧 Backend API: http://localhost:${backendPort}`));
     console.log(chalk.blue(`📈 Health Check: http://localhost:${backendPort}/health`));
@@ -99,7 +99,7 @@ export async function startDashboard(options: StartOptions) {
 
     // Handle graceful shutdown
     process.on('SIGINT', async () => {
-      console.log(chalk.yellow('\n🛑 Shutting down Agent Trace services...'));
+      console.log(chalk.yellow('\n🛑 Shutting down Axon services...'));
       await stopServices();
       process.exit(0);
     });
@@ -113,7 +113,7 @@ export async function startDashboard(options: StartOptions) {
     await new Promise(() => {});
 
   } catch (error) {
-    spinner.fail('Failed to start Agent Trace services');
+    spinner.fail('Failed to start Axon services');
     await stopServices();
     throw error;
   }
@@ -121,14 +121,14 @@ export async function startDashboard(options: StartOptions) {
 
 async function startBackend(projectRoot: string, port: number): Promise<void> {
   return new Promise((resolve, reject) => {
-    const backendPath = join(projectRoot, 'node_modules', '@agent-trace', 'backend', 'dist', 'server.js');
+    const backendPath = join(projectRoot, 'node_modules', '@axon-ai', 'backend', 'dist', 'server.js');
     
     // If not found in node_modules, try relative path from CLI package
     const cliBackendPath = join(__dirname, '..', '..', '..', '..', 'backend', 'dist', 'server.js');
     const backendScript = existsSync(backendPath) ? backendPath : cliBackendPath;
 
     if (!existsSync(backendScript)) {
-      reject(new Error('Backend server not found. Please ensure Agent Trace is properly installed.'));
+      reject(new Error('Backend server not found. Please ensure Axon is properly installed.'));
       return;
     }
 
@@ -173,14 +173,14 @@ async function startBackend(projectRoot: string, port: number): Promise<void> {
 
 async function startDashboardServer(projectRoot: string, port: number): Promise<void> {
   return new Promise((resolve, reject) => {
-    const dashboardPath = join(projectRoot, 'node_modules', '@agent-trace', 'dashboard', 'dist');
+    const dashboardPath = join(projectRoot, 'node_modules', '@axon-ai', 'dashboard', 'dist');
     
     // If not found in node_modules, try relative path from CLI package
     const cliDashboardPath = join(__dirname, '..', '..', '..', '..', 'dashboard', 'dist');
     const dashboardDist = existsSync(dashboardPath) ? dashboardPath : cliDashboardPath;
 
     if (!existsSync(dashboardDist)) {
-      reject(new Error('Dashboard not found. Please ensure Agent Trace is properly installed.'));
+      reject(new Error('Dashboard not found. Please ensure Axon is properly installed.'));
       return;
     }
 

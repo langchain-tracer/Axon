@@ -8,7 +8,9 @@
 
 ---
 
-## 🚀 Quick Start (Docker - Recommended)
+## 🚀 Quick Start
+
+### Option 1: Docker (Recommended)
 
 Get up and running in **2 minutes**:
 
@@ -23,6 +25,37 @@ make start
 **That's it!** No dependency installation, no configuration needed.
 
 📖 [Docker Quick Start Guide](./DOCKER_QUICKSTART.md) | [Full Docker Documentation](./DOCKER_SETUP.md)
+
+### Option 2: CLI Installation
+
+You can install the Axon CLI globally or locally within your project.
+
+**Global Installation (Recommended):**
+```bash
+npm install -g @axon-ai/cli
+```
+
+**Local Installation:**
+```bash
+npm install @axon-ai/cli
+# Then use npx to run commands
+npx axon-ai --help
+```
+
+**Quick Start with CLI:**
+1. **Initialize Axon in your project directory:**
+   ```bash
+   axon-ai init --project my-ai-project
+   ```
+
+2. **Start the Axon dashboard and backend services:**
+   ```bash
+   axon-ai start
+   ```
+
+3. **Integrate the tracer into your LangChain application** (see Integration Examples below)
+
+4. **Run your LangChain application** and watch the traces appear in the Axon dashboard in real-time!
 
 ---
 
@@ -94,6 +127,13 @@ npm run dev
 
 [See Manual Setup Guide →](./MANUAL_SETUP.md)
 
+### Option 3: CLI Tool
+
+Install the CLI globally for easy access:
+```bash
+npm install -g @axon-ai/cli
+```
+
 ---
 
 ## 🎯 Usage
@@ -104,6 +144,9 @@ npm run dev
 # Docker
 make start
 
+# CLI
+axon-ai start
+
 # Manual
 npm start  # (in both backend/ and dashboard/)
 ```
@@ -112,6 +155,28 @@ npm start  # (in both backend/ and dashboard/)
 
 #### LangChain
 
+**Using createTracer (CLI approach):**
+```javascript
+import { createTracer } from '@axon-ai/langchain-tracer';
+import { ChatOpenAI } from '@langchain/openai';
+
+// Create the Axon tracer instance
+const tracer = createTracer({
+  projectName: 'my-ai-project' // Must match the project name used in `axon-ai init`
+});
+
+// Add the tracer to your model's callbacks
+const model = new ChatOpenAI({
+  modelName: 'gpt-3.5-turbo',
+  callbacks: [tracer] // <--- Add this line
+});
+
+// Example: Use the model
+const response = await model.invoke("Hello, how are you?");
+console.log(response);
+```
+
+**Using TracingCallbackHandler:**
 ```typescript
 import { TracingCallbackHandler } from '@axon-ai/langchain-tracer';
 
@@ -125,6 +190,29 @@ const agent = createAgent({
 });
 
 await agent.invoke({ input: "Your query" });
+```
+
+**Agent Integration:**
+```javascript
+import { AgentExecutor, createOpenAIFunctionsAgent } from 'langchain/agents';
+
+const agent = await createOpenAIFunctionsAgent({ /* ... */ });
+const agentExecutor = new AgentExecutor({
+  agent,
+  tools: [searchTool, calculatorTool],
+  callbacks: [tracer] // Add tracer to the executor
+});
+```
+
+**Chain Integration:**
+```javascript
+import { LLMChain } from 'langchain/chains';
+
+const chain = new LLMChain({
+  llm: model,
+  prompt: myPrompt,
+  callbacks: [tracer]
+});
 ```
 
 #### OpenAI
@@ -142,7 +230,25 @@ const completion = await openai.chat.completions.create({...});
 
 ### 3. View Traces
 
-Open http://localhost:8080 and watch your agent's execution in real-time!
+Open http://localhost:8080 (Docker) or http://localhost:5173 (CLI/Manual) and watch your agent's execution in real-time!
+
+---
+
+## 📚 CLI Commands
+
+The Axon CLI provides several commands to manage your monitoring environment:
+
+- `axon-ai init [options]`: Initializes Axon in your project, creating a configuration file.
+  - `--project <name>`: Specify a project name (default: "default").
+  - `--auto-start`: Automatically start the dashboard after initialization.
+- `axon-ai start [options]`: Starts the Axon backend server and dashboard.
+  - `-p, --port <port>`: Backend server port (default: 3000).
+  - `-d, --dashboard-port <port>`: Dashboard port (default: 5173).
+  - `--no-open`: Prevent automatic opening of the dashboard in the browser.
+  - `--project <name>`: Specify the project to trace.
+- `axon-ai status`: Checks the status of Axon services (project info, server, dashboard).
+- `axon-ai stop`: Stops all running Axon services.
+- `axon-ai version`: Displays the installed Axon CLI version.
 
 ---
 
@@ -303,6 +409,10 @@ make dev
 # Manual
 cd backend && npm run dev      # Terminal 1
 cd dashboard && npm run dev    # Terminal 2
+
+# CLI Development
+cd packages/cli
+npm run dev
 ```
 
 ### Building for Production
@@ -314,6 +424,9 @@ make build
 # Manual
 cd backend && npm run build
 cd dashboard && npm run build
+
+# CLI
+npm run build:cli
 ```
 
 ### Running Tests
@@ -356,7 +469,23 @@ socket.on('new_event', (event) => {...})
 
 ## 🤝 Contributing
 
-We welcome contributions! Please see:
+We welcome contributions! If you're interested in developing Axon:
+
+```bash
+git clone https://github.com/yourusername/langchain-tracer/Axon.git
+cd axon-ai
+npm install
+npm run build:cli
+```
+
+For running in development:
+
+```bash
+cd packages/cli
+npm run dev
+```
+
+Please see:
 - [Contributing Guide](./CONTRIBUTING.md)
 - [Code of Conduct](./CODE_OF_CONDUCT.md)
 - [Development Guide](./docs/DEVELOPMENT.md)
@@ -391,6 +520,13 @@ make backup         # Backup first
 make clean          # Reset everything
 make start          # Fresh start
 ```
+
+### Port Already in Use?
+
+If you get a "Port Already in Use" error:
+- Stop any running AXON services: `axon-ai stop` or `make stop`
+- Check what's using the port: `lsof -i :3000` or `lsof -i :5173`
+- Kill the process or use different ports with `axon-ai start -p 3001 -d 5174`
 
 ### More help?
 
@@ -429,4 +565,3 @@ If you find AXON useful, please consider giving it a star! ⭐
 **Built with ❤️ for the AI agent community**
 
 [Get Started →](./DOCKER_QUICKSTART.md) | [Documentation →](./DOCKER_SETUP.md) | [Examples →](./test-langchain-project/)
-

@@ -1,4 +1,7 @@
 "use strict";
+var __defProp = Object.defineProperty;
+var __defNormalProp = (obj, key, value) => key in obj ? __defProp(obj, key, { enumerable: true, configurable: true, writable: true, value }) : obj[key] = value;
+var __publicField = (obj, key, value) => __defNormalProp(obj, typeof key !== "symbol" ? key + "" : key, value);
 Object.defineProperty(exports, Symbol.toStringTag, { value: "Module" });
 const uuid = require("uuid");
 const socket_ioClient = require("socket.io-client");
@@ -19,6 +22,13 @@ function _interopNamespaceDefault(e) {
   return Object.freeze(n);
 }
 const uuid__namespace = /* @__PURE__ */ _interopNamespaceDefault(uuid);
+var __defProp2 = Object.defineProperty;
+var __export = (target, all) => {
+  for (var name in all) __defProp2(target, name, {
+    get: all[name],
+    enumerable: true
+  });
+};
 function getDefaultExportFromCjs(x) {
   return x && x.__esModule && Object.prototype.hasOwnProperty.call(x, "default") ? x["default"] : x;
 }
@@ -117,13 +127,14 @@ function keyToJson(key, map) {
 }
 function mapKeys(fields, mapper, map) {
   const mapped = {};
-  for (const key in fields) {
-    if (Object.hasOwn(fields, key)) {
-      mapped[mapper(key, map)] = fields[key];
-    }
-  }
+  for (const key in fields) if (Object.hasOwn(fields, key)) mapped[mapper(key, map)] = fields[key];
   return mapped;
 }
+var serializable_exports = {};
+__export(serializable_exports, {
+  Serializable: () => Serializable,
+  get_lc_unique_name: () => get_lc_unique_name
+});
 function shallowCopy(obj) {
   return Array.isArray(obj) ? [...obj] : { ...obj };
 }
@@ -133,101 +144,85 @@ function replaceSecrets(root, secretsMap) {
     const [last, ...partsReverse] = path.split(".").reverse();
     let current = result;
     for (const part of partsReverse.reverse()) {
-      if (current[part] === void 0) {
-        break;
-      }
+      if (current[part] === void 0) break;
       current[part] = shallowCopy(current[part]);
       current = current[part];
     }
-    if (current[last] !== void 0) {
-      current[last] = {
-        lc: 1,
-        type: "secret",
-        id: [secretId]
-      };
-    }
+    if (current[last] !== void 0) current[last] = {
+      lc: 1,
+      type: "secret",
+      id: [secretId]
+    };
   }
   return result;
 }
 function get_lc_unique_name(serializableClass) {
   const parentClass = Object.getPrototypeOf(serializableClass);
   const lcNameIsSubclassed = typeof serializableClass.lc_name === "function" && (typeof parentClass.lc_name !== "function" || serializableClass.lc_name() !== parentClass.lc_name());
-  if (lcNameIsSubclassed) {
-    return serializableClass.lc_name();
-  } else {
-    return serializableClass.name;
-  }
+  if (lcNameIsSubclassed) return serializableClass.lc_name();
+  else return serializableClass.name;
 }
-class Serializable {
+var Serializable = class Serializable2 {
+  constructor(kwargs, ..._args) {
+    __publicField(this, "lc_serializable", false);
+    __publicField(this, "lc_kwargs");
+    if (this.lc_serializable_keys !== void 0) this.lc_kwargs = Object.fromEntries(Object.entries(kwargs || {}).filter(([key]) => {
+      var _a;
+      return (_a = this.lc_serializable_keys) == null ? void 0 : _a.includes(key);
+    }));
+    else this.lc_kwargs = kwargs ?? {};
+  }
   /**
-   * The name of the serializable. Override to provide an alias or
-   * to preserve the serialized module name in minified environments.
-   *
-   * Implemented as a static method to support loading logic.
-   */
+  * The name of the serializable. Override to provide an alias or
+  * to preserve the serialized module name in minified environments.
+  *
+  * Implemented as a static method to support loading logic.
+  */
   static lc_name() {
     return this.name;
   }
   /**
-   * The final serialized identifier for the module.
-   */
+  * The final serialized identifier for the module.
+  */
   get lc_id() {
-    return [
-      ...this.lc_namespace,
-      get_lc_unique_name(this.constructor)
-    ];
+    return [...this.lc_namespace, get_lc_unique_name(this.constructor)];
   }
   /**
-   * A map of secrets, which will be omitted from serialization.
-   * Keys are paths to the secret in constructor args, e.g. "foo.bar.baz".
-   * Values are the secret ids, which will be used when deserializing.
-   */
+  * A map of secrets, which will be omitted from serialization.
+  * Keys are paths to the secret in constructor args, e.g. "foo.bar.baz".
+  * Values are the secret ids, which will be used when deserializing.
+  */
   get lc_secrets() {
     return void 0;
   }
   /**
-   * A map of additional attributes to merge with constructor args.
-   * Keys are the attribute names, e.g. "foo".
-   * Values are the attribute values, which will be serialized.
-   * These attributes need to be accepted by the constructor as arguments.
-   */
+  * A map of additional attributes to merge with constructor args.
+  * Keys are the attribute names, e.g. "foo".
+  * Values are the attribute values, which will be serialized.
+  * These attributes need to be accepted by the constructor as arguments.
+  */
   get lc_attributes() {
     return void 0;
   }
   /**
-   * A map of aliases for constructor args.
-   * Keys are the attribute names, e.g. "foo".
-   * Values are the alias that will replace the key in serialization.
-   * This is used to eg. make argument names match Python.
-   */
+  * A map of aliases for constructor args.
+  * Keys are the attribute names, e.g. "foo".
+  * Values are the alias that will replace the key in serialization.
+  * This is used to eg. make argument names match Python.
+  */
   get lc_aliases() {
     return void 0;
   }
-  constructor(kwargs, ..._args) {
-    Object.defineProperty(this, "lc_serializable", {
-      enumerable: true,
-      configurable: true,
-      writable: true,
-      value: false
-    });
-    Object.defineProperty(this, "lc_kwargs", {
-      enumerable: true,
-      configurable: true,
-      writable: true,
-      value: void 0
-    });
-    this.lc_kwargs = kwargs || {};
+  /**
+  * A manual list of keys that should be serialized.
+  * If not overridden, all fields passed into the constructor will be serialized.
+  */
+  get lc_serializable_keys() {
+    return void 0;
   }
   toJSON() {
-    if (!this.lc_serializable) {
-      return this.toJSONNotImplemented();
-    }
-    if (
-      // eslint-disable-next-line no-instanceof/no-instanceof
-      this.lc_kwargs instanceof Serializable || typeof this.lc_kwargs !== "object" || Array.isArray(this.lc_kwargs)
-    ) {
-      return this.toJSONNotImplemented();
-    }
+    if (!this.lc_serializable) return this.toJSONNotImplemented();
+    if (this.lc_kwargs instanceof Serializable2 || typeof this.lc_kwargs !== "object" || Array.isArray(this.lc_kwargs)) return this.toJSONNotImplemented();
     const aliases = {};
     const secrets = {};
     const kwargs = Object.keys(this.lc_kwargs).reduce((acc, key) => {
@@ -244,21 +239,15 @@ class Serializable {
       let write = kwargs;
       const [last, ...partsReverse] = keyPath.split(".").reverse();
       for (const key of partsReverse.reverse()) {
-        if (!(key in read) || read[key] === void 0)
-          return;
+        if (!(key in read) || read[key] === void 0) return;
         if (!(key in write) || write[key] === void 0) {
-          if (typeof read[key] === "object" && read[key] != null) {
-            write[key] = {};
-          } else if (Array.isArray(read[key])) {
-            write[key] = [];
-          }
+          if (typeof read[key] === "object" && read[key] != null) write[key] = {};
+          else if (Array.isArray(read[key])) write[key] = [];
         }
         read = read[key];
         write = write[key];
       }
-      if (last in read && read[last] !== void 0) {
-        write[last] = write[last] || read[last];
-      }
+      if (last in read && read[last] !== void 0) write[last] = write[last] || read[last];
     });
     return {
       lc: 1,
@@ -274,107 +263,77 @@ class Serializable {
       id: this.lc_id
     };
   }
+};
+var env_exports = {};
+__export(env_exports, {
+  getEnv: () => getEnv,
+  getEnvironmentVariable: () => getEnvironmentVariable,
+  getRuntimeEnvironment: () => getRuntimeEnvironment,
+  isBrowser: () => isBrowser,
+  isDeno: () => isDeno,
+  isJsDom: () => isJsDom,
+  isNode: () => isNode,
+  isWebWorker: () => isWebWorker
+});
+const isBrowser = () => typeof window !== "undefined" && typeof window.document !== "undefined";
+const isWebWorker = () => typeof globalThis === "object" && globalThis.constructor && globalThis.constructor.name === "DedicatedWorkerGlobalScope";
+const isJsDom = () => typeof window !== "undefined" && window.name === "nodejs" || typeof navigator !== "undefined" && navigator.userAgent.includes("jsdom");
+const isDeno = () => typeof Deno !== "undefined";
+const isNode = () => typeof process !== "undefined" && typeof process.versions !== "undefined" && typeof process.versions.node !== "undefined" && !isDeno();
+const getEnv = () => {
+  let env;
+  if (isBrowser()) env = "browser";
+  else if (isNode()) env = "node";
+  else if (isWebWorker()) env = "webworker";
+  else if (isJsDom()) env = "jsdom";
+  else if (isDeno()) env = "deno";
+  else env = "other";
+  return env;
+};
+let runtimeEnvironment;
+function getRuntimeEnvironment() {
+  if (runtimeEnvironment === void 0) {
+    const env = getEnv();
+    runtimeEnvironment = {
+      library: "langchain-js",
+      runtime: env
+    };
+  }
+  return runtimeEnvironment;
 }
 function getEnvironmentVariable(name) {
   var _a;
   try {
-    return typeof process !== "undefined" ? (
-      // eslint-disable-next-line no-process-env
-      (_a = process.env) == null ? void 0 : _a[name]
-    ) : void 0;
-  } catch (e) {
+    if (typeof process !== "undefined") return (_a = process.env) == null ? void 0 : _a[name];
+    else if (isDeno()) return Deno == null ? void 0 : Deno.env.get(name);
+    else return void 0;
+  } catch {
     return void 0;
   }
 }
-class BaseCallbackHandlerMethodsClass {
+var base_exports = {};
+__export(base_exports, {
+  BaseCallbackHandler: () => BaseCallbackHandler,
+  callbackHandlerPrefersStreaming: () => callbackHandlerPrefersStreaming,
+  isBaseCallbackHandler: () => isBaseCallbackHandler
+});
+var BaseCallbackHandlerMethodsClass = class {
+};
+function callbackHandlerPrefersStreaming(x) {
+  return "lc_prefer_streaming" in x && x.lc_prefer_streaming;
 }
-class BaseCallbackHandler extends BaseCallbackHandlerMethodsClass {
-  get lc_namespace() {
-    return ["langchain_core", "callbacks", this.name];
-  }
-  get lc_secrets() {
-    return void 0;
-  }
-  get lc_attributes() {
-    return void 0;
-  }
-  get lc_aliases() {
-    return void 0;
-  }
-  /**
-   * The name of the serializable. Override to provide an alias or
-   * to preserve the serialized module name in minified environments.
-   *
-   * Implemented as a static method to support loading logic.
-   */
-  static lc_name() {
-    return this.name;
-  }
-  /**
-   * The final serialized identifier for the module.
-   */
-  get lc_id() {
-    return [
-      ...this.lc_namespace,
-      get_lc_unique_name(this.constructor)
-    ];
-  }
+var BaseCallbackHandler = class extends BaseCallbackHandlerMethodsClass {
   constructor(input) {
     super();
-    Object.defineProperty(this, "lc_serializable", {
-      enumerable: true,
-      configurable: true,
-      writable: true,
-      value: false
-    });
-    Object.defineProperty(this, "lc_kwargs", {
-      enumerable: true,
-      configurable: true,
-      writable: true,
-      value: void 0
-    });
-    Object.defineProperty(this, "ignoreLLM", {
-      enumerable: true,
-      configurable: true,
-      writable: true,
-      value: false
-    });
-    Object.defineProperty(this, "ignoreChain", {
-      enumerable: true,
-      configurable: true,
-      writable: true,
-      value: false
-    });
-    Object.defineProperty(this, "ignoreAgent", {
-      enumerable: true,
-      configurable: true,
-      writable: true,
-      value: false
-    });
-    Object.defineProperty(this, "ignoreRetriever", {
-      enumerable: true,
-      configurable: true,
-      writable: true,
-      value: false
-    });
-    Object.defineProperty(this, "ignoreCustomEvent", {
-      enumerable: true,
-      configurable: true,
-      writable: true,
-      value: false
-    });
-    Object.defineProperty(this, "raiseError", {
-      enumerable: true,
-      configurable: true,
-      writable: true,
-      value: false
-    });
-    Object.defineProperty(this, "awaitHandlers", {
-      enumerable: true,
-      configurable: true,
-      writable: true,
-      value: getEnvironmentVariable("LANGCHAIN_CALLBACKS_BACKGROUND") !== "true"
-    });
+    __publicField(this, "lc_serializable", false);
+    __publicField(this, "lc_kwargs");
+    __publicField(this, "ignoreLLM", false);
+    __publicField(this, "ignoreChain", false);
+    __publicField(this, "ignoreAgent", false);
+    __publicField(this, "ignoreRetriever", false);
+    __publicField(this, "ignoreCustomEvent", false);
+    __publicField(this, "raiseError", false);
+    __publicField(this, "awaitHandlers", getEnvironmentVariable("LANGCHAIN_CALLBACKS_BACKGROUND") === "false");
     this.lc_kwargs = input || {};
     if (input) {
       this.ignoreLLM = input.ignoreLLM ?? this.ignoreLLM;
@@ -385,6 +344,40 @@ class BaseCallbackHandler extends BaseCallbackHandlerMethodsClass {
       this.raiseError = input.raiseError ?? this.raiseError;
       this.awaitHandlers = this.raiseError || (input._awaitHandler ?? this.awaitHandlers);
     }
+  }
+  get lc_namespace() {
+    return [
+      "langchain_core",
+      "callbacks",
+      this.name
+    ];
+  }
+  get lc_secrets() {
+    return void 0;
+  }
+  get lc_attributes() {
+    return void 0;
+  }
+  get lc_aliases() {
+    return void 0;
+  }
+  get lc_serializable_keys() {
+    return void 0;
+  }
+  /**
+  * The name of the serializable. Override to provide an alias or
+  * to preserve the serialized module name in minified environments.
+  *
+  * Implemented as a static method to support loading logic.
+  */
+  static lc_name() {
+    return this.name;
+  }
+  /**
+  * The final serialized identifier for the module.
+  */
+  get lc_id() {
+    return [...this.lc_namespace, get_lc_unique_name(this.constructor)];
   }
   copy() {
     return new this.constructor(this);
@@ -399,18 +392,17 @@ class BaseCallbackHandler extends BaseCallbackHandlerMethodsClass {
     class Handler extends BaseCallbackHandler {
       constructor() {
         super();
-        Object.defineProperty(this, "name", {
-          enumerable: true,
-          configurable: true,
-          writable: true,
-          value: uuid__namespace.v4()
-        });
+        __publicField(this, "name", uuid__namespace.v4());
         Object.assign(this, methods);
       }
     }
     return new Handler();
   }
-}
+};
+const isBaseCallbackHandler = (x) => {
+  const callbackHandler = x;
+  return callbackHandler !== void 0 && typeof callbackHandler.copy === "function" && typeof callbackHandler.name === "string" && typeof callbackHandler.awaitHandlers === "boolean";
+};
 class TraceClient {
   constructor(config) {
     this.socket = null;
@@ -1140,7 +1132,7 @@ async function detectProjectConfig() {
     const maxDepth = 10;
     let depth = 0;
     while (depth < maxDepth) {
-      const configPath = path.join(currentDir, ".agent-trace", "config.json");
+      const configPath = path.join(currentDir, ".axon-ai", "config.json");
       if (fs.existsSync(configPath)) {
         try {
           const config = JSON.parse(fs.readFileSync(configPath, "utf8"));
@@ -1150,7 +1142,7 @@ async function detectProjectConfig() {
             debug: false
           };
         } catch (error) {
-          console.warn("[AgentTrace] Failed to parse config file:", error);
+          console.warn("[Axon] Failed to parse config file:", error);
           return null;
         }
       }
@@ -1163,7 +1155,7 @@ async function detectProjectConfig() {
     }
     return null;
   } catch (error) {
-    console.warn("[AgentTrace] Failed to load fs/path modules:", error);
+    console.warn("[Axon] Failed to load fs/path modules:", error);
     return null;
   }
 }
@@ -1184,7 +1176,7 @@ async function detectProjectName() {
           const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, "utf8"));
           return packageJson.name || "default";
         } catch (error) {
-          console.warn("[AgentTrace] Failed to parse package.json:", error);
+          console.warn("[Axon] Failed to parse package.json:", error);
           return "default";
         }
       }
@@ -1197,7 +1189,7 @@ async function detectProjectName() {
     }
     return "default";
   } catch (error) {
-    console.warn("[AgentTrace] Failed to load fs/path modules:", error);
+    console.warn("[Axon] Failed to load fs/path modules:", error);
     return "default";
   }
 }

@@ -1,37 +1,37 @@
 # Agent Trace CLI
 
-A command-line tool for monitoring LangChain agents in real-time with the Agent Trace dashboard.
+A command-line tool for monitoring LangChain agents in real-time with the AXON dashboard.
 
 ## Installation
 
 ### Global Installation (Recommended)
 
 ```bash
-npm install -g @agent-trace/cli
+npm install -g @axon-ai/cli
 ```
 
 ### Local Installation
 
 ```bash
-npm install @agent-trace/cli
-npx agent-trace --help
+npm install @axon-ai/cli
+npx axon-ai --help
 ```
 
 ## Quick Start
 
-1. **Initialize Agent Trace in your project:**
+1. **Initialize Axon in your project:**
    ```bash
-   agent-trace init --project my-ai-project
+   axon-ai init --project my-ai-project
    ```
 
 2. **Start the dashboard:**
    ```bash
-   agent-trace start
+   axon-ai start
    ```
 
 3. **Add tracing to your LangChain agents:**
    ```javascript
-   import { createTracer } from '@agent-trace/langchain-tracer';
+   import { createTracer } from '@axon-ai/langchain-tracer';
    
    const tracer = createTracer({
      projectName: 'my-ai-project'
@@ -47,12 +47,12 @@ npx agent-trace --help
 
 ## Commands
 
-### `agent-trace init`
+### `axon-ai init`
 
-Initialize Agent Trace in your current project.
+Initialize AXON in your current project.
 
 ```bash
-agent-trace init [options]
+axon-ai init [options]
 ```
 
 **Options:**
@@ -61,15 +61,15 @@ agent-trace init [options]
 
 **Example:**
 ```bash
-agent-trace init --project my-ai-app --auto-start
+axon-ai init --project my-ai-app --auto-start
 ```
 
-### `agent-trace start`
+### `axon-ai start`
 
-Start the Agent Trace dashboard and enable tracing.
+Start the AXON dashboard and enable tracing.
 
 ```bash
-agent-trace start [options]
+axon-ai start [options]
 ```
 
 **Options:**
@@ -80,15 +80,15 @@ agent-trace start [options]
 
 **Example:**
 ```bash
-agent-trace start --port 3001 --dashboard-port 5174
+axon-ai start --port 3001 --dashboard-port 5174
 ```
 
 ### `agent-trace status`
 
-Check the status of Agent Trace services.
+Check the status of AXON services.
 
 ```bash
-agent-trace status
+axon-ai status
 ```
 
 Shows:
@@ -97,20 +97,20 @@ Shows:
 - Dashboard status
 - Quick action suggestions
 
-### `agent-trace stop`
+### `axon-ai stop`
 
-Stop all Agent Trace services.
+Stop all AXON services.
 
 ```bash
-agent-trace stop
+axon-ai stop
 ```
 
-### `agent-trace version`
+### `axon-ai version`
 
 Show version information.
 
 ```bash
-agent-trace version
+axon-ai version
 ```
 
 ## Integration with LangChain
@@ -118,7 +118,7 @@ agent-trace version
 ### Basic Integration
 
 ```javascript
-import { createTracer } from '@agent-trace/langchain-tracer';
+import { createTracer } from '@axon-ai/langchain-tracer';
 import { ChatOpenAI } from '@langchain/openai';
 
 // Create tracer
@@ -166,7 +166,7 @@ const chain = new LLMChain({
 
 ## Configuration
 
-After running `agent-trace init`, a `.agent-trace/config.json` file is created:
+After running `axon-ai init`, a `.axon-ai/config.json` file is created:
 
 ```json
 {
@@ -198,20 +198,20 @@ lsof -i :3000
 kill -9 <PID>
 
 # Or use different ports
-agent-trace start --port 3001 --dashboard-port 5174
+axon-ai start --port 3001 --dashboard-port 5174
 ```
 
 ### Services Not Starting
 
 1. Check if ports are available:
    ```bash
-   agent-trace status
+   axon-ai status
    ```
 
 2. Stop all services and restart:
    ```bash
-   agent-trace stop
-   agent-trace start
+   axon-ai stop
+   axon-ai start
    ```
 
 3. Check logs in the terminal where you started the services
@@ -220,7 +220,7 @@ agent-trace start --port 3001 --dashboard-port 5174
 
 If the dashboard doesn't open automatically:
 
-1. Check the status: `agent-trace status`
+1. Check the status: `axon-ai status`
 2. Manually open: `http://localhost:5173` (or your configured port)
 3. Make sure the backend is running on the correct port
 
@@ -229,8 +229,8 @@ If the dashboard doesn't open automatically:
 ### Building from Source
 
 ```bash
-git clone https://github.com/yourusername/agent-trace-visualizer
-cd agent-trace-visualizer
+git clone https://github.com/yourusername/langchain-tracer/Axon.git
+cd axon-ai
 npm install
 npm run build:cli
 ```
@@ -241,12 +241,6 @@ npm run build:cli
 cd packages/cli
 npm run dev
 ```
-
-## Support
-
-- 📖 [Documentation](https://github.com/yourusername/agent-trace-visualizer)
-- 🐛 [Report Issues](https://github.com/yourusername/agent-trace-visualizer/issues)
-- 💬 [Discussions](https://github.com/yourusername/agent-trace-visualizer/discussions)
 
 ## License
 
