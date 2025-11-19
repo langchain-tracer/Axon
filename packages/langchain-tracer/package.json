@@ -1,9 +1,9 @@
 {
-  "name": "@axon-ai/langchain-tracer",
+  "name": "@agent-trace/langchain-tracer",
   "version": "1.0.2",
-  "description": "LangChain tracing callback handler for AXON",
+  "description": "LangChain tracing callback handler for Agent Trace Visualizer",
   "type": "module",
-  "main": "./dist/index.js",
+  "main": "./dist/index.cjs",
   "module": "./dist/index.mjs",
   "types": "./dist/index.d.ts",
   "exports": {
@@ -25,8 +25,7 @@
     "test:coverage": "vitest run --coverage",
     "lint": "eslint src --ext .ts",
     "type-check": "tsc --noEmit",
-    "clean": "rm -rf dist",
-    "prepublishOnly": "npm run build"
+    "clean": "rm -rf dist"
   },
   "keywords": [
     "langchain",
@@ -37,11 +36,11 @@
     "agents",
     "monitoring"
   ],
-  "author": "AXON AI TEAM",
+  "author": "Your Name",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/yourusername/langchain-tracer/Axon.git"
+    "url": "https://github.com/yourusername/agent-trace-visualizer"
   },
   "peerDependencies": {
     "@langchain/core": ">=0.1.0"

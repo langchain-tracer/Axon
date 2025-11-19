@@ -1,0 +1,36 @@
+FROM node:20-alpine
+
+# Install build dependencies for native modules (better-sqlite3)
+RUN apk add --no-cache \
+    python3 \
+    make \
+    g++ \
+    git
+
+# Set working directory
+WORKDIR /app
+
+# Copy package files
+COPY package*.json ./
+
+# Install all dependencies (including dev)
+RUN npm install
+
+# Copy source code
+COPY . .
+
+# Expose port
+EXPOSE 3000
+
+# Environment variables
+ENV PORT=3000
+ENV HOST=0.0.0.0
+ENV DATABASE_PATH=/data/traces.db
+ENV NODE_ENV=development
+
+# Create directories
+RUN mkdir -p /data /app/logs
+
+# Start with hot reload (tsx watch)
+CMD ["npm", "run", "dev"]
+
