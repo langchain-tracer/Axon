@@ -188,16 +188,31 @@ const IntegratedDashboardContent = () => {
             const generateStepName = (node: any): string => {
                 const stepNumber = node.label?.replace('Step ', '') || '1';
                 
+                // OpenAI-specific naming (check data field first)
+                const nodeData = node.data || node;
+                if (nodeData.functionName) {
+                    return nodeData.functionName;
+                }
+                if (nodeData.selectedTool?.name) {
+                    return `Tool: ${nodeData.selectedTool.name}`;
+                }
+                if (node.type === 'conversation_turn' && nodeData.turnNumber) {
+                    return `Conversation Turn #${nodeData.turnNumber}`;
+                }
+                
                 switch (node.type) {
                     case 'chain_start':
                         return 'Initial Query';
                     case 'chain_end':
                         return 'Final Response';
                     case 'llm_start':
+                    case 'function_call_start':
                         return 'LLM Processing';
                     case 'llm_end':
+                    case 'function_call_end':
                         return 'LLM Response';
                     case 'tool_start':
+                    case 'tool_selection':
                         if (node.toolName === 'DynamicTool') {
                             // Try to determine the actual tool from the input
                             if (node.toolInput?.includes('weather') || node.toolInput?.includes('London')) {
@@ -209,7 +224,7 @@ const IntegratedDashboardContent = () => {
                             }
                             return 'Tool Execution';
                         }
-                        return `${node.toolName || 'Tool'} Call`;
+                        return `${node.toolName || nodeData.selectedTool?.name || 'Tool'} Call`;
                     case 'tool_end':
                         if (node.toolName === 'DynamicTool') {
                             if (node.toolOutput?.includes('weather') || node.toolOutput?.includes('°F')) {
@@ -219,7 +234,9 @@ const IntegratedDashboardContent = () => {
                             }
                             return 'Tool Response';
                         }
-                        return `${node.toolName || 'Tool'} Response`;
+                        return `${node.toolName || nodeData.selectedTool?.name || 'Tool'} Response`;
+                    case 'conversation_turn':
+                        return nodeData.turnNumber ? `Conversation Turn #${nodeData.turnNumber}` : 'Conversation Turn';
                     default:
                         return node.label || `Step ${stepNumber}`;
                 }
@@ -240,11 +257,15 @@ const IntegratedDashboardContent = () => {
                     case 'llm_start':
                     case 'llm_end':
                     case 'llm_call':
+                    case 'function_call_start':
+                    case 'function_call_end':
+                    case 'conversation_turn':
                         return 'LLM';      // Blue
                     case 'tool':
                     case 'tool_start':
                     case 'tool_end':
                     case 'tool_invocation':
+                    case 'tool_selection':
                         return 'TOOL';     // Green
                     case 'chain':
                     case 'chain_start':
@@ -273,33 +294,47 @@ const IntegratedDashboardContent = () => {
                 }
             };
 
-            const flowNodes: Node[] = data.nodes.map((node: any, index: number) => ({
-                id: node.id,
-                type: 'custom',
-                position: { x: node.x || 200 + (index % 3) * 250, y: node.y || 100 + Math.floor(index / 3) * 200 },
-                data: {
-                    ...node,
-                    label: generateStepName(node),
-                    type: node.type,  // Keep original type for color mapping
-                    stepType: getStepType(node),  // Display label
-                    cost: calculateCost(node),
-                    latency: node.latency || 0,
-                    status: node.status || 'complete',
-                    timestamp: node.timestamp || node.startTime,
-                    prompt: node.prompt,
-                    response: node.response,
-                    toolParams: node.toolParams,
-                    toolResponse: node.toolResponse,
-                    model: node.model,
-                    toolName: node.toolName,
-                    toolInput: node.toolInput,
-                    toolOutput: node.toolOutput,
-                    chainName: node.chainName,
-                    hasLoop: node.hasLoop || false,
-                    // Add token information if available
-                    tokens: node.tokens || { input: 0, output: 0 }
-                }
-            }));
+            const flowNodes: Node[] = data.nodes.map((node: any, index: number) => {
+                // Merge node.data if it exists (for OpenAI traces)
+                const nodeData = node.data || {};
+                const mergedNode = { ...node, ...nodeData };
+                
+                return {
+                    id: node.id,
+                    type: 'custom',
+                    position: { x: node.x || 200 + (index % 3) * 250, y: node.y || 100 + Math.floor(index / 3) * 200 },
+                    data: {
+                        ...mergedNode,
+                        label: generateStepName(mergedNode),
+                        type: mergedNode.type,  // Keep original type for color mapping
+                        stepType: getStepType(mergedNode),  // Display label
+                        cost: mergedNode.cost || calculateCost(mergedNode),
+                        latency: mergedNode.latency || 0,
+                        status: mergedNode.status || 'complete',
+                        timestamp: mergedNode.timestamp || mergedNode.startTime,
+                        prompt: mergedNode.prompt || mergedNode.prompts?.[0],
+                        response: mergedNode.response,
+                        toolParams: mergedNode.toolParams,
+                        toolResponse: mergedNode.toolResponse,
+                        model: mergedNode.model,
+                        toolName: mergedNode.toolName,
+                        toolInput: mergedNode.toolInput || mergedNode.input,
+                        toolOutput: mergedNode.toolOutput || mergedNode.output,
+                        chainName: mergedNode.chainName,
+                        hasLoop: mergedNode.hasLoop || false,
+                        // OpenAI-specific fields
+                        functionName: mergedNode.functionName,
+                        arguments: mergedNode.arguments,
+                        selectedTool: mergedNode.selectedTool,
+                        confidence: mergedNode.confidence,
+                        availableTools: mergedNode.availableTools,
+                        turnNumber: mergedNode.turnNumber,
+                        userMessage: mergedNode.userMessage,
+                        // Add token information if available
+                        tokens: mergedNode.tokens || { input: 0, output: 0, total: mergedNode.tokens?.total || 0 }
+                    }
+                };
+            });
 
             const flowEdges: Edge[] = data.edges.map((edge: any, index: number) => ({
                 id: `e${edge.source}-${edge.target}-${index}`,
