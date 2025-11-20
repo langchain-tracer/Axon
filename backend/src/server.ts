@@ -12,7 +12,7 @@ import { db } from './database/connection.js';
 import { initializeSchema } from './database/schema.js';
 import { TraceProcessor } from './services/trace-processor.js';
 
-// import { performance } from 'node:perf_hooks';
+import { performance } from 'node:perf_hooks';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Environment flags
