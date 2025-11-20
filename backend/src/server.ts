@@ -19,6 +19,7 @@ import { db } from "./database/connection.js";
 import { initializeSchema } from "./database/schema.js";
 import { TraceEvent } from "./types/index.js";
 import { TraceProcessor } from "./services/trace-processor.js";
+import { generateNodeLabel, calculateCost, calculateNodePosition } from "./utils/nodeUtils.js";
 
 // Initialize database schema on startup
 initializeSchema();
@@ -110,96 +111,6 @@ app.use(express.json());
 // ============================================================================
 
 /**
- * Generate human-readable label for a node
- */
-function generateNodeLabel(node: any, index: number): string {
-  const stepNumber = index + 1;
-  
-  switch (node.type) {
-    case "llm_start":
-      return "LLM Processing";
-    case "llm_end":
-      return "LLM Response";
-    case "tool_start":
-      if (node.toolName) {
-        return `${node.toolName} Call`;
-      }
-      return "Tool Execution";
-    case "tool_end":
-      if (node.toolName) {
-        return `${node.toolName} Result`;
-      }
-      return "Tool Complete";
-    case "chain_start":
-      return "Process Start";
-    case "chain_end":
-      return "Process Complete";
-    case "llm":
-      return node.metadata?.model || `LLM Call ${stepNumber}`;
-    case "tool":
-      return node.toolName || `Tool Call ${stepNumber}`;
-    case "chain":
-      return node.metadata?.chainName || `Chain ${stepNumber}`;
-    default:
-      return `Step ${stepNumber}`;
-  }
-}
-
-/**
- * Calculate cost for a node based on tokens and model
- */
-function calculateCost(node: any): number {
-  if (node.cost) return node.cost;
-  
-  // Basic cost calculation based on tokens
-  const tokens = node.tokens;
-  if (!tokens) {
-    // If no token data, estimate based on content
-    return estimateCostFromContent(node);
-  }
-  
-  // Rough cost estimates (these should be configurable)
-  const inputCostPer1k = 0.0015; // $0.0015 per 1k input tokens
-  const outputCostPer1k = 0.002; // $0.002 per 1k output tokens
-  
-  const inputCost = (tokens.input || 0) / 1000 * inputCostPer1k;
-  const outputCost = (tokens.output || 0) / 1000 * outputCostPer1k;
-  
-  return inputCost + outputCost;
-}
-
-/**
- * Estimate cost based on content when token data is not available
- */
-function estimateCostFromContent(node: any): number {
-  let inputTokens = 0;
-  let outputTokens = 0;
-  
-  // Estimate tokens based on content
-  if (node.prompt) {
-    inputTokens = Math.ceil(node.prompt.length / 4); // Rough estimate: 4 chars per token
-  }
-  
-  if (node.response) {
-    outputTokens = Math.ceil(node.response.length / 4);
-  }
-  
-  if (node.toolInput) {
-    inputTokens += Math.ceil(node.toolInput.length / 4);
-  }
-  
-  if (node.toolOutput) {
-    outputTokens += Math.ceil(node.toolOutput.length / 4);
-  }
-  
-  // Apply cost rates
-  const inputCostPer1k = 0.0015;
-  const outputCostPer1k = 0.002;
-  
-  return (inputTokens / 1000 * inputCostPer1k) + (outputTokens / 1000 * outputCostPer1k);
-}
-
-/**
  * Estimate tokens from content when token data is not available
  */
 function estimateTokensFromContent(node: any): { input: number; output: number; total: number } | undefined {
@@ -233,20 +144,6 @@ function estimateTokensFromContent(node: any): { input: number; output: number; 
   }
   
   return undefined;
-}
-
-/**
- * Calculate node position for graph layout
- */
-function calculateNodePosition(index: number): { x: number; y: number } {
-  const cols = 3;
-  const col = index % cols;
-  const row = Math.floor(index / cols);
-
-  return {
-    x: 200 + col * 250,
-    y: 100 + row * 200
-  };
 }
 
 /**
@@ -823,63 +720,8 @@ io.on("connection", (socket) => {
         });
 
         // Calculate positions for nodes
-        const calculateNodePosition = (index: number) => ({
-          x: (index % 3) * 300 + 100,
-          y: Math.floor(index / 3) * 200 + 100
-        });
 
-        // Generate node labels
-        const generateNodeLabel = (node: any, index: number): string => {
-          const stepNumber = index + 1;
-          switch (node.type) {
-            case "llm_start":
-              return "LLM Processing";
-            case "llm_end":
-              return "LLM Response";
-            case "tool_start":
-              if (node.toolName) {
-                return `${node.toolName} Call`;
-              }
-              return "Tool Execution";
-            case "tool_end":
-              if (node.toolName) {
-                return `${node.toolName} Result`;
-              }
-              return "Tool Complete";
-            case "chain_start":
-              return "Process Start";
-            case "chain_end":
-              return "Process Complete";
-            default:
-              return `Step ${stepNumber}`;
-          }
-        };
 
-        // Calculate cost
-        const calculateCost = (node: any): number => {
-          if (node.cost) return node.cost;
-          const tokens = node.tokens;
-          if (!tokens) return 0;
-          const inputCostPer1k = 0.0015;
-          const outputCostPer1k = 0.002;
-          const inputCost = (tokens.input || 0) / 1000 * inputCostPer1k;
-          const outputCost = (tokens.output || 0) / 1000 * outputCostPer1k;
-          return inputCost + outputCost;
-        };
-
-        // Estimate tokens from content
-        const estimateTokensFromContent = (node: any): { input: number; output: number; total: number } | undefined => {
-          let inputTokens = 0;
-          let outputTokens = 0;
-          if (node.prompt) inputTokens = Math.ceil(node.prompt.length / 4);
-          if (node.response) outputTokens = Math.ceil(node.response.length / 4);
-          if (node.toolInput) inputTokens += Math.ceil(node.toolInput.length / 4);
-          if (node.toolOutput) outputTokens += Math.ceil(node.toolOutput.length / 4);
-          if (inputTokens > 0 || outputTokens > 0) {
-            return { input: inputTokens, output: outputTokens, total: inputTokens + outputTokens };
-          }
-          return undefined;
-        };
 
         // Transform to enhanced nodes
         const enhancedNodes = sortedNodes.map((node, index) => {
@@ -890,7 +732,7 @@ io.on("connection", (socket) => {
             label: label,
             type: node.type,
             status: node.status,
-            cost: calculateCost(node),
+            cost: calculateCost(node) || 0,
             latency: node.latency || 0,
             tokens: node.tokens || estimateTokensFromContent(node),
             timestamp: node.startTime,
@@ -1020,18 +862,19 @@ io.on("connection", (socket) => {
 // START SERVER
 // ============================================================================
 
-const PORT = process.env.PORT || 3000;
+const PORT = parseInt(process.env.PORT || '3000', 10);
+const HOST = process.env.HOST || '127.0.0.1'; // Use 127.0.0.1 to avoid EPERM on macOS
 
-httpServer.listen(PORT, () => {
+httpServer.listen(PORT, HOST, () => {
   console.log(`
-╔══════════════════════════════════════════════════╗
-║   🚀 AXON Backend Server                         ║
-╠══════════════════════════════════════════════════║
-║   HTTP:      http://localhost:${PORT}               ║
-║   WebSocket: ws://localhost:${PORT}                 ║
-║   Health:    http://localhost:${PORT}/health        ║
-║   Traces:    http://localhost:${PORT}/api/traces    ║
-╚══════════════════════════════════════════════════╝
+╔════════════════════════════════════════════╗
+║   🚀 Agent Trace Backend Server           ║
+╠════════════════════════════════════════════╣
+║   HTTP:      http://${HOST}:${PORT}      ║
+║   WebSocket: ws://${HOST}:${PORT}        ║
+║   Health:    http://${HOST}:${PORT}/health ║
+║   Traces:    http://${HOST}:${PORT}/api/traces ║
+╚════════════════════════════════════════════╝
   `);
   console.log("✅ Server ready to receive traces!\n");
 });
