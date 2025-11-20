@@ -1,6 +1,7 @@
 {
   "name": "@axon-ai/dashboard",
-  "version": "1.0.3",
+  "version": "1.0.4",
+  "description": "Axon dashboard for langchain trace vizualisation, monitoring and debugging",
   "type": "module",
   "scripts": {
     "dev": "vite",
