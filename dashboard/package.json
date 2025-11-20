@@ -1,5 +1,5 @@
 {
-  "name": "dashboard",
+  "name": "@axon-ai/dashboard",
   "version": "1.0.2",
   "type": "module",
   "scripts": {
