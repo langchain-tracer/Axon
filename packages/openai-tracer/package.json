@@ -1,6 +1,6 @@
 {
   "name": "@axon-ai/openai-tracer",
-  "version": "1.0.3",
+  "version": "1.0.2",
   "description": "OpenAI Function Calling tracer for Axon",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
