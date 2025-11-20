@@ -1,8 +1,8 @@
 {
-  "name": "agent-trace-backend",
+  "name": "@axon-ai/backend",
   "version": "1.0.2",
   "type": "module",
-  "description": "Backend for Agent Trace Visualizer with SQLite",
+  "description": "Backend for Axon with SQLite",
   "main": "dist/server.js",
   "scripts": {
     "dev": "tsx watch src/server.ts",
