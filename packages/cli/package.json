@@ -1,7 +1,7 @@
 {
-  "name": "@agent-trace/cli",
+  "name": "@axon-ai/cli",
   "version": "1.0.2",
-  "description": "CLI tool for Agent Trace Visualizer - Monitor LangChain agents in real-time",
+  "description": "CLI tool for Axon - Monitor LangChain agents in real-time",
   "type": "module",
   "main": "./dist/index.js",
   "bin": {
