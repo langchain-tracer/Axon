@@ -1,6 +1,6 @@
 {
   "name": "@axon-ai/langchain-tracer",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "LangChain tracing callback handler for Axon",
   "type": "module",
   "main": "./dist/index.cjs",
