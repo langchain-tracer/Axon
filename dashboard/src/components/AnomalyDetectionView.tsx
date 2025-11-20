@@ -1,21 +1,19 @@
 import React, { useState, useEffect } from 'react';
 import { 
-  AlertTriangle, 
-  Bug, 
-  DollarSign, 
-  Clock, 
-  RefreshCw, 
-  Zap, 
   TrendingUp,
   Filter,
   ChevronDown,
   ChevronRight,
   Info,
   CheckCircle,
-  XCircle,
-  AlertCircle
+  AlertCircle,
+  RefreshCw,
+  AlertTriangle,
+  DollarSign,
+  Clock
 } from 'lucide-react';
 import { AnomalyDetector, Anomaly, AnomalyDetectionResult } from '../utils/AnomalyDetection';
+import { getAnomalyIcon, getSeverityColor, getTypeColor, toggleAnomalyExpansion as toggleExpansion } from '../utils/anomalyUtils';
 
 interface AnomalyDetectionViewProps {
   nodes: any[];
@@ -54,49 +52,6 @@ const AnomalyDetectionView: React.FC<AnomalyDetectionViewProps> = ({
     }
   };
 
-  const toggleAnomalyExpansion = (anomalyId: string) => {
-    const newExpanded = new Set(expandedAnomalies);
-    if (newExpanded.has(anomalyId)) {
-      newExpanded.delete(anomalyId);
-    } else {
-      newExpanded.add(anomalyId);
-    }
-    setExpandedAnomalies(newExpanded);
-  };
-
-  const getAnomalyIcon = (type: string) => {
-    switch (type) {
-      case 'loop': return <RefreshCw className="w-4 h-4" />;
-      case 'contradiction': return <XCircle className="w-4 h-4" />;
-      case 'expensive_operation': return <DollarSign className="w-4 h-4" />;
-      case 'redundant_calls': return <Zap className="w-4 h-4" />;
-      case 'error_pattern': return <Bug className="w-4 h-4" />;
-      case 'performance_issue': return <Clock className="w-4 h-4" />;
-      default: return <AlertTriangle className="w-4 h-4" />;
-    }
-  };
-
-  const getSeverityColor = (severity: string) => {
-    switch (severity) {
-      case 'critical': return 'text-red-400 bg-red-500/20 border-red-500';
-      case 'high': return 'text-orange-400 bg-orange-500/20 border-orange-500';
-      case 'medium': return 'text-yellow-400 bg-yellow-500/20 border-yellow-500';
-      case 'low': return 'text-blue-400 bg-blue-500/20 border-blue-500';
-      default: return 'text-gray-400 bg-gray-500/20 border-gray-500';
-    }
-  };
-
-  const getTypeColor = (type: string) => {
-    switch (type) {
-      case 'loop': return 'text-purple-400 bg-purple-500/20 border-purple-500';
-      case 'contradiction': return 'text-red-400 bg-red-500/20 border-red-500';
-      case 'expensive_operation': return 'text-orange-400 bg-orange-500/20 border-orange-500';
-      case 'redundant_calls': return 'text-yellow-400 bg-yellow-500/20 border-yellow-500';
-      case 'error_pattern': return 'text-red-400 bg-red-500/20 border-red-500';
-      case 'performance_issue': return 'text-blue-400 bg-blue-500/20 border-blue-500';
-      default: return 'text-gray-400 bg-gray-500/20 border-gray-500';
-    }
-  };
 
   const filteredAnomalies = detectionResult?.anomalies.filter(anomaly => {
     const typeMatch = filterType === 'all' || anomaly.type === filterType;
@@ -242,7 +197,7 @@ const AnomalyDetectionView: React.FC<AnomalyDetectionViewProps> = ({
               >
                 <div
                   className="p-4 cursor-pointer hover:bg-slate-700 transition-colors"
-                  onClick={() => toggleAnomalyExpansion(anomaly.id)}
+                  onClick={() => toggleExpansion(anomaly.id, expandedAnomalies, setExpandedAnomalies)}
                 >
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
