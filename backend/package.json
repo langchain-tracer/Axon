@@ -1,6 +1,6 @@
 {
   "name": "@axon-ai/backend",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "type": "module",
   "description": "Backend for Axon with SQLite",
   "main": "dist/server.js",
