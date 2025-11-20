@@ -1,7 +1,7 @@
 {
-  "name": "@agent-trace/langchain-tracer",
-  "version": "1.0.2",
-  "description": "LangChain tracing callback handler for Agent Trace Visualizer",
+  "name": "@axon-ai/langchain-tracer",
+  "version": "1.0.3",
+  "description": "LangChain tracing callback handler for Axon",
   "type": "module",
   "main": "./dist/index.cjs",
   "module": "./dist/index.mjs",
@@ -36,7 +36,7 @@
     "agents",
     "monitoring"
   ],
-  "author": "Your Name",
+  "author": "Axon Team",
   "license": "MIT",
   "repository": {
     "type": "git",
