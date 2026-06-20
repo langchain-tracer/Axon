@@ -3,7 +3,6 @@
   "version": "1.0.4",
   "description": "CLI tool for Axon - Monitor LangChain agents in real-time",
   "type": "module",
-  "main": "./dist/index.js",
   "bin": {
     "agent-trace": "dist/cli.js",
     "axon": "dist/cli.js",
