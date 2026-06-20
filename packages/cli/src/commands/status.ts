@@ -25,59 +25,31 @@ export async function status() {
 
     const config = JSON.parse(readFileSync(configPath, 'utf8'));
 
-    // Check backend status
-    const backendPort = config.backend?.port || 3000;
-    const dashboardPort = config.dashboard?.port || 5173;
-
-    const backendRunning = await checkPort(backendPort);
-    const dashboardRunning = await checkPort(dashboardPort);
+    // Axon runs as a single service (backend serves the dashboard).
+    const port = config.port || config.backend?.port || 4000;
+    const running = await checkPort(port);
 
     spinner.succeed('Status check completed!');
 
     console.log(chalk.green('\n📊 Axon Status'));
     console.log(chalk.blue('═'.repeat(30)));
 
-    // Project info
     console.log(chalk.blue(`📁 Project: ${config.project}`));
     console.log(chalk.blue(`📅 Initialized: ${new Date(config.initialized).toLocaleString()}`));
 
-    // Backend status
-    if (backendRunning) {
-      console.log(chalk.green(`✅ Backend: Running on port ${backendPort}`));
-      console.log(chalk.gray(`   API: http://localhost:${backendPort}`));
-      console.log(chalk.gray(`   Health: http://localhost:${backendPort}/health`));
+    if (running) {
+      console.log(chalk.green(`✅ Axon: Running on port ${port}`));
+      console.log(chalk.gray(`   Dashboard:   http://localhost:${port}`));
+      console.log(chalk.gray(`   OTLP ingest: http://localhost:${port}/v1/traces`));
+      console.log(chalk.gray(`   Health:      http://localhost:${port}/health`));
+      console.log(chalk.green('\n🎉 Axon is operational!'));
     } else {
-      console.log(chalk.red(`❌ Backend: Not running (port ${backendPort})`));
+      console.log(chalk.red(`❌ Axon: Not running (port ${port})`));
+      console.log(chalk.yellow('\nRun "axon-ai start" to start Axon.'));
     }
 
-    // Dashboard status
-    if (dashboardRunning) {
-      console.log(chalk.green(`✅ Dashboard: Running on port ${dashboardPort}`));
-      console.log(chalk.gray(`   URL: http://localhost:${dashboardPort}`));
-    } else {
-      console.log(chalk.red(`❌ Dashboard: Not running (port ${dashboardPort})`));
-    }
-
-    // Overall status
-    if (backendRunning && dashboardRunning) {
-      console.log(chalk.green('\n🎉 Axon is fully operational!'));
-      console.log(chalk.yellow('💡 Your agents are being traced in real-time.'));
-    } else if (backendRunning || dashboardRunning) {
-      console.log(chalk.yellow('\n⚠️  Axon is partially running.'));
-      console.log(chalk.gray('Some services may need to be restarted.'));
-    } else {
-      console.log(chalk.red('\n❌ Axon is not running.'));
-      console.log(chalk.yellow('Run "axon-ai start" to start all services.'));
-    }
-
-    // Quick actions
     console.log(chalk.blue('\n🔧 Quick Actions:'));
-    if (!backendRunning || !dashboardRunning) {
-      console.log(chalk.gray('   axon-ai start    - Start all services'));
-    }
-    if (backendRunning || dashboardRunning) {
-      console.log(chalk.gray('   axon-ai stop     - Stop all services'));
-    }
+    console.log(chalk.gray(running ? '   axon-ai stop     - Stop Axon' : '   axon-ai start    - Start Axon'));
     console.log(chalk.gray('   axon-ai init     - Reinitialize project'));
 
   } catch (error) {

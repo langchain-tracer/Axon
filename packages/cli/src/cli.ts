@@ -26,14 +26,13 @@ program
 // Start command - launches dashboard and enables tracing
 program
   .command('start')
-  .description('Start the Axon dashboard and enable tracing')
-  .option('-p, --port <port>', 'Port for the backend server', '3000')
-  .option('-d, --dashboard-port <port>', 'Port for the dashboard', '5173')
+  .description('Start Axon (backend + dashboard on one URL)')
+  .option('-p, --port <port>', 'Port to serve Axon on', '4000')
   .option('--no-open', 'Don\'t automatically open the dashboard in browser')
   .option('--project <name>', 'Project name for organizing traces')
   .action(async (options) => {
     try {
-      //await startDashboard(options);
+      await startDashboard(options);
     } catch (error) {
       console.error(chalk.red('❌ Failed to start Axon:'), (error as Error).message);
       process.exit(1);

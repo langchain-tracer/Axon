@@ -1,7 +1,8 @@
 {
   "name": "@axon-ai/langchain-tracer",
   "version": "1.0.3",
-  "description": "LangChain tracing callback handler for Axon",
+  "description": "[DEPRECATED] Use OpenTelemetry/OpenLLMetry — Axon is now OTLP-native.",
+  "deprecated": "Deprecated: Axon is now OTLP-native. Use OpenLLMetry (@traceloop/node-server-sdk) or OpenInference pointed at http://localhost:4000.",
   "type": "module",
   "main": "./dist/index.cjs",
   "module": "./dist/index.mjs",

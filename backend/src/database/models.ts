@@ -3,7 +3,7 @@
  */
 
 import { db } from "./connection.js";
-import { Trace, Node, Edge, Anomaly } from "../types/index.js";
+import { Trace, Node, Edge } from "../types/index.js";
 
 export class TraceModel {
   /**
@@ -291,58 +291,6 @@ export class EdgeModel {
       fromNode: row.from_node,
       toNode: row.to_node,
       edgeType: row.edge_type || 'default',
-      createdAt: new Date(row.created_at)
-    }));
-  }
-}
-
-export class AnomalyModel {
-  /**
-   * Create an anomaly
-   */
-  static create(anomaly: Omit<Anomaly, "id" | "createdAt">): Anomaly {
-    const result = db.run(
-      `INSERT INTO anomalies (
-        trace_id, type, severity, message, nodes, suggestion, metadata
-      ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      [
-        anomaly.traceId,
-        anomaly.type,
-        anomaly.severity,
-        anomaly.message,
-        JSON.stringify(anomaly.nodes),
-        anomaly.suggestion || null,
-        anomaly.metadata ? JSON.stringify(anomaly.metadata) : null
-      ]
-    );
-
-    const row = db.get<any>("SELECT * FROM anomalies WHERE id = ?", [
-      result.lastInsertRowid
-    ]);
-
-    return {
-      ...row!,
-      id: String(row!.id),
-      nodes: JSON.parse(row!.nodes),
-      metadata: row!.metadata ? JSON.parse(row!.metadata) : undefined,
-      createdAt: new Date(row!.created_at)
-    };
-  }
-
-  /**
-   * Get anomalies for a trace
-   */
-  static findByTraceId(traceId: string): Anomaly[] {
-    const rows = db.query<any>(
-      "SELECT * FROM anomalies WHERE trace_id = ? ORDER BY created_at DESC",
-      [traceId]
-    );
-
-    return rows.map((row) => ({
-      ...row,
-      id: String(row.id),
-      nodes: JSON.parse(row.nodes),
-      metadata: row.metadata ? JSON.parse(row.metadata) : undefined,
       createdAt: new Date(row.created_at)
     }));
   }

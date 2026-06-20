@@ -2,51 +2,23 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import path from 'path';
 
+// In dev, proxy API + SSE to the backend (single port 4000). In production the
+// backend serves the built dashboard, so these requests are same-origin.
 export default defineConfig({
   plugins: [react()],
   server: {
     host: '127.0.0.1',
-    // port: 3000,
     proxy: {
-      '/api': {
-        target: 'http://127.0.0.1:3000',
-        changeOrigin: true
-      },
-      '/ws': {
-        target: 'ws://127.0.0.1:3000',
-        ws: true
-      }
-    }
+      '/api': { target: 'http://127.0.0.1:4000', changeOrigin: true },
+      '/v1': { target: 'http://127.0.0.1:4000', changeOrigin: true },
+    },
   },
   resolve: {
-    alias: {
-      '@': path.resolve(__dirname, './src')
-    }
-  },
-  optimizeDeps: {
-    include: [
-      'react',
-      'react-dom',
-      'react-dom/client',
-      'reactflow',
-      'dagre',
-      'zustand',
-      'd3',
-      'lucide-react',
-      'recharts',
-      'socket.io-client'
-    ],
-    esbuildOptions: {
-      target: 'esnext'
-    }
+    alias: { '@': path.resolve(__dirname, './src') },
   },
   build: {
     outDir: 'dist',
-    sourcemap: true,
-    target: 'esnext'
+    sourcemap: false,
+    target: 'esnext',
   },
-//   test: {
-//     globals: true,
-//     environment: 'jsdom'
-//   }
 });
