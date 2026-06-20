@@ -31,14 +31,8 @@ export async function initProject(options: InitOptions) {
       project: options.project,
       version: '1.0.0',
       initialized: new Date().toISOString(),
-      backend: {
-        port: 3000,
-        host: 'localhost'
-      },
-      dashboard: {
-        port: 5173,
-        host: 'localhost'
-      }
+      port: 4000,
+      host: 'localhost'
     };
 
     writeFileSync(configPath, JSON.stringify(config, null, 2));
@@ -193,8 +187,7 @@ console.log('Make sure to start the dashboard with: axon-ai start');
       console.log(chalk.yellow('\n🚀 Auto-starting dashboard...'));
       const { startDashboard } = await import('./start.js');
       await startDashboard({
-        port: '3000',
-        dashboardPort: '5173',
+        port: '4000',
         open: true,
         project: options.project
       });
