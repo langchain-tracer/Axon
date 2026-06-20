@@ -80,30 +80,6 @@ export function initializeSchema(): void {
   db.run("CREATE INDEX IF NOT EXISTS idx_edges_from ON edges(from_node)");
   db.run("CREATE INDEX IF NOT EXISTS idx_edges_to ON edges(to_node)");
 
-  // Create anomalies table
-  db.run(`
-    CREATE TABLE IF NOT EXISTS anomalies (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      trace_id TEXT NOT NULL,
-      type TEXT NOT NULL,
-      severity TEXT NOT NULL,
-      message TEXT NOT NULL,
-      nodes TEXT NOT NULL,
-      suggestion TEXT,
-      metadata TEXT,
-      created_at INTEGER DEFAULT (strftime('%s', 'now') * 1000),
-      FOREIGN KEY (trace_id) REFERENCES traces(id) ON DELETE CASCADE
-    )
-  `);
-
-  db.run(
-    "CREATE INDEX IF NOT EXISTS idx_anomalies_trace ON anomalies(trace_id)"
-  );
-  db.run("CREATE INDEX IF NOT EXISTS idx_anomalies_type ON anomalies(type)");
-  db.run(
-    "CREATE INDEX IF NOT EXISTS idx_anomalies_severity ON anomalies(severity)"
-  );
-
   // Create trigger to update updated_at
   db.run(`
     CREATE TRIGGER IF NOT EXISTS update_traces_updated_at

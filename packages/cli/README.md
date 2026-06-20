@@ -1,248 +1,81 @@
-# Agent Trace CLI
+# @axon-ai/cli
 
-A command-line tool for monitoring LangChain agents in real-time with the AXON dashboard.
+The Axon CLI runs a local, **OpenTelemetry-native** LLM-observability stack —
+backend **and** dashboard on a single URL. Point any OTEL/OpenLLMetry exporter at
+it and watch your LLM/agent traces in real time. No Axon-specific SDK needed.
 
-## Installation
-
-### Global Installation (Recommended)
+## Install
 
 ```bash
 npm install -g @axon-ai/cli
 ```
 
-### Local Installation
+## Quick start
 
 ```bash
-npm install @axon-ai/cli
-npx axon-ai --help
+axon start
+#   ✔ Axon running at http://localhost:4000
 ```
 
-## Quick Start
+Then send standard OpenTelemetry spans to `http://localhost:4000`. With
+**OpenLLMetry** (Node):
 
-1. **Initialize Axon in your project:**
-   ```bash
-   axon-ai init --project my-ai-project
-   ```
+```ts
+import * as traceloop from "@traceloop/node-server-sdk";
+traceloop.initialize({ baseUrl: "http://localhost:4000" });
+// use LangChain / OpenAI / Anthropic / LlamaIndex normally — traces appear in Axon
+```
 
-2. **Start the dashboard:**
-   ```bash
-   axon-ai start
-   ```
+Or with a raw OTEL SDK: `OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4000`.
 
-3. **Add tracing to your LangChain agents:**
-   ```javascript
-   import { createTracer } from '@axon-ai/langchain-tracer';
-   
-   const tracer = createTracer({
-     projectName: 'my-ai-project'
-   });
-   
-   const model = new ChatOpenAI({
-     modelName: 'gpt-3.5-turbo',
-     callbacks: [tracer] // Add the tracer
-   });
-   ```
-
-4. **Run your agents and watch them in real-time!**
+Open **http://localhost:4000** (on Windows use `http://127.0.0.1:4000` if `localhost`
+won't connect). Traces are stored per project under `./.axon-ai/traces.db`.
 
 ## Commands
 
-### `axon-ai init`
+### `axon start`
+Start Axon (backend + dashboard on one URL).
 
-Initialize AXON in your current project.
+- `-p, --port <port>` — port to serve on (default: `4000`)
+- `--no-open` — don't open the browser automatically
+- `--project <name>` — project name for organizing traces
 
-```bash
-axon-ai init [options]
-```
+### `axon status`
+Report whether Axon is running and on which port.
 
-**Options:**
-- `--project <name>` - Project name (default: "default")
-- `--auto-start` - Automatically start dashboard after initialization
+### `axon stop`
+Stop Axon.
 
-**Example:**
-```bash
-axon-ai init --project my-ai-app --auto-start
-```
+### `axon version`
+Print the CLI version.
 
-### `axon-ai start`
+> `axon`, `axon-ai`, and `agent-trace` are aliases for the same CLI.
 
-Start the AXON dashboard and enable tracing.
+## The dashboard
 
-```bash
-axon-ai start [options]
-```
+Each trace offers four views:
 
-**Options:**
-- `-p, --port <port>` - Backend server port (default: 3000)
-- `-d, --dashboard-port <port>` - Dashboard port (default: 5173)
-- `--no-open` - Don't automatically open dashboard in browser
-- `--project <name>` - Project name for organizing traces
+- **Transcript** (default) — the run as a chat dialogue (user → model → tool → result).
+- **Tree** — the span hierarchy with inline duration bars.
+- **Waterfall** — duration bars on a shared time axis.
+- **Raw** — the verbatim OTEL span JSON, with a copy button.
 
-**Example:**
-```bash
-axon-ai start --port 3001 --dashboard-port 5174
-```
-
-### `agent-trace status`
-
-Check the status of AXON services.
-
-```bash
-axon-ai status
-```
-
-Shows:
-- Project information
-- Backend server status
-- Dashboard status
-- Quick action suggestions
-
-### `axon-ai stop`
-
-Stop all AXON services.
-
-```bash
-axon-ai stop
-```
-
-### `axon-ai version`
-
-Show version information.
-
-```bash
-axon-ai version
-```
-
-## Integration with LangChain
-
-### Basic Integration
-
-```javascript
-import { createTracer } from '@axon-ai/langchain-tracer';
-import { ChatOpenAI } from '@langchain/openai';
-
-// Create tracer
-const tracer = createTracer({
-  projectName: 'my-project',
-  endpoint: 'http://localhost:3000'
-});
-
-// Add to your model
-const model = new ChatOpenAI({
-  modelName: 'gpt-3.5-turbo',
-  callbacks: [tracer]
-});
-```
-
-### Agent Integration
-
-```javascript
-import { AgentExecutor, createOpenAIFunctionsAgent } from 'langchain/agents';
-
-const agent = await createOpenAIFunctionsAgent({
-  llm: model,
-  tools: [searchTool, calculatorTool],
-  prompt: agentPrompt
-});
-
-const agentExecutor = new AgentExecutor({
-  agent,
-  tools: [searchTool, calculatorTool],
-  callbacks: [tracer] // Add tracer to executor too
-});
-```
-
-### Chain Integration
-
-```javascript
-import { LLMChain } from 'langchain/chains';
-
-const chain = new LLMChain({
-  llm: model,
-  prompt: myPrompt,
-  callbacks: [tracer]
-});
-```
-
-## Configuration
-
-After running `axon-ai init`, a `.axon-ai/config.json` file is created:
-
-```json
-{
-  "project": "my-project",
-  "version": "1.0.0",
-  "initialized": "2024-01-15T10:30:00.000Z",
-  "backend": {
-    "port": 3000,
-    "host": "localhost"
-  },
-  "dashboard": {
-    "port": 5173,
-    "host": "localhost"
-  }
-}
-```
+Plus a per-trace **cost-by-model** breakdown.
 
 ## Troubleshooting
 
-### Port Already in Use
+**Port already in use** — start on another port: `axon start --port 5000`, or stop
+the process holding `4000`.
 
-If you get a "port already in use" error:
+**`localhost` won't connect (Windows)** — open `http://127.0.0.1:4000` instead;
+`localhost` may resolve to IPv6 while the server binds IPv4.
 
-```bash
-# Check what's using the port
-lsof -i :3000
+## Migrating from the old tracer packages
 
-# Kill the process
-kill -9 <PID>
-
-# Or use different ports
-axon-ai start --port 3001 --dashboard-port 5174
-```
-
-### Services Not Starting
-
-1. Check if ports are available:
-   ```bash
-   axon-ai status
-   ```
-
-2. Stop all services and restart:
-   ```bash
-   axon-ai stop
-   axon-ai start
-   ```
-
-3. Check logs in the terminal where you started the services
-
-### Dashboard Not Opening
-
-If the dashboard doesn't open automatically:
-
-1. Check the status: `axon-ai status`
-2. Manually open: `http://localhost:5173` (or your configured port)
-3. Make sure the backend is running on the correct port
-
-## Development
-
-### Building from Source
-
-```bash
-git clone https://github.com/yourusername/langchain-tracer/Axon.git
-cd axon-ai
-npm install
-npm run build:cli
-```
-
-### Running in Development
-
-```bash
-cd packages/cli
-npm run dev
-```
+`@axon-ai/langchain-tracer` and `@axon-ai/openai-tracer` are **deprecated**. Use
+standard OTEL instrumentation (OpenLLMetry / OpenInference) pointed at
+`http://localhost:4000` instead.
 
 ## License
 
-MIT License - see [LICENSE](LICENSE) for details.
-
+MIT — see [LICENSE](LICENSE).

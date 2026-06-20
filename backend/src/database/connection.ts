@@ -5,6 +5,7 @@
 import Database from "better-sqlite3";
 import { logger } from "../utils/logger.js";
 import path from "path";
+import { mkdirSync } from "fs";
 import { fileURLToPath } from "url";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -16,6 +17,9 @@ class SQLiteDatabase {
   constructor() {
     const dbPath =
       process.env.DATABASE_PATH || path.join(__dirname, "../../data/traces.db");
+
+    // Ensure the parent directory exists (better-sqlite3 won't create it).
+    mkdirSync(path.dirname(dbPath), { recursive: true });
 
     logger.info("Connecting to SQLite database:", dbPath);
 
