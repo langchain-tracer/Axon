@@ -1,13 +1,13 @@
 {
   "name": "@axon-ai/cli",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "CLI tool for Axon - Monitor LangChain agents in real-time",
   "type": "module",
   "main": "./dist/index.js",
   "bin": {
-    "agent-trace": "./dist/cli.js",
-    "axon": "./dist/cli.js",
-    "axon-ai": "./dist/cli.js"
+    "agent-trace": "dist/cli.js",
+    "axon": "dist/cli.js",
+    "axon-ai": "dist/cli.js"
   },
   "files": [
     "dist",
@@ -16,7 +16,7 @@
   ],
   "scripts": {
     "dev": "tsx watch src/cli.ts",
-    "build": "tsc && chmod +x dist/cli.js",
+    "build": "tsc",
     "bundle": "node scripts/bundle.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
@@ -37,7 +37,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/langchain-tracer/Axon.git"
+    "url": "git+https://github.com/langchain-tracer/Axon.git"
   },
   "dependencies": {
     "commander": "^11.1.0",
