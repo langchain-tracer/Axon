@@ -1,7 +1,8 @@
 {
   "name": "@axon-ai/openai-tracer",
   "version": "1.0.3",
-  "description": "OpenAI Function Calling tracer for Axon",
+  "description": "[DEPRECATED] Use OpenTelemetry/OpenLLMetry — Axon is now OTLP-native.",
+  "deprecated": "Deprecated: Axon is now OTLP-native. Use OpenLLMetry (@traceloop/node-server-sdk) or OpenInference pointed at http://localhost:4000.",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
   "types": "dist/index.d.ts",

@@ -20,6 +20,8 @@
     "typescript": "^5.3.3"
   },
   "dependencies": {
+    "@esbuild/win32-x64": "^0.25.11",
+    "@rollup/rollup-win32-x64-msvc": "^4.62.0",
     "sqlite": "^5.1.1",
     "sqlite3": "^5.1.7"
   }

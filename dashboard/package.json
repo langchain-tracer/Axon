@@ -1,7 +1,7 @@
 {
   "name": "@axon-ai/dashboard",
   "version": "1.0.4",
-  "description": "Axon dashboard for langchain trace vizualisation, monitoring and debugging",
+  "description": "Axon dashboard for Agent trace vizualisation, monitoring and debugging",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -10,19 +10,11 @@
     "test": "vitest"
   },
   "dependencies": {
-    "d3": "^7.8.5",
-    "dagre": "^0.8.5",
-    "html-to-image": "^1.11.13",
     "lucide-react": "^0.263.1",
     "react": "^18.3.1",
-    "react-dom": "^18.3.1",
-    "reactflow": "^11.11.4",
-    "recharts": "^2.10.0",
-    "socket.io-client": "^4.8.1"
+    "react-dom": "^18.3.1"
   },
   "devDependencies": {
-    "@types/d3": "^7.4.3",
-    "@types/dagre": "^0.7.53",
     "@types/react": "^18.2.43",
     "@types/react-dom": "^18.2.17",
     "@vitejs/plugin-react": "^4.2.1",
