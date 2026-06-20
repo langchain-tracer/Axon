@@ -1,13 +1,10 @@
 import React from 'react';
 import { createRoot } from 'react-dom/client';
-import { ReactFlowProvider } from 'reactflow';
 import App from './App';
 import './index.css';
 
 createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
-    <ReactFlowProvider>
-      <App />
-    </ReactFlowProvider>
+    <App />
   </React.StrictMode>,
 );

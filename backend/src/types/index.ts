@@ -38,17 +38,6 @@ export type EdgeType =
   | "feedback_loop";    // Feedback mechanisms
 
 // ============================================================================
-// Anomaly Types
-// ============================================================================
-
-export type AnomalyType =
-  | "loop"
-  | "contradiction"
-  | "cost_spike"
-  | "timeout_risk";
-export type AnomalySeverity = "low" | "medium" | "high" | "critical";
-
-// ============================================================================
 // Event Types (separate from NodeTypes for trace events)
 // ============================================================================
 
@@ -253,7 +242,6 @@ export interface TraceWithEvents extends Trace {
   events: TraceEvent[];
   nodes?: Node[];
   edges?: Edge[];
-  anomalies?: Anomaly[];
 }
 
 /**
@@ -320,23 +308,6 @@ export interface Edge {
   createdAt: Date;
 }
 
-export interface Anomaly {
-  id: string;
-  traceId: string;
-  type: AnomalyType;
-  severity: AnomalySeverity;
-  message: string;
-  nodes: string[];
-  suggestion?: string;
-  metadata?: Record<string, any>;
-  createdAt: Date;
-}
-
-/**
- * Input for creating an anomaly (without auto-generated fields)
- */
-export type CreateAnomalyInput = Omit<Anomaly, "id" | "createdAt">;
-
 /**
  * Input for creating a node (without auto-generated fields)
  */
@@ -372,7 +343,6 @@ export interface GetTraceResponse {
   trace: Trace;
   nodes: Node[];
   edges: Edge[];
-  anomalies: Anomaly[];
 }
 
 export interface CostAnalysisResponse {
@@ -429,11 +399,6 @@ export interface ReplayResponse {
 export interface TraceUpdateEvent {
   traceId: string;
   event: TraceEvent;
-}
-
-export interface AnomalyDetectedEvent {
-  traceId: string;
-  anomalies: Anomaly[];
 }
 
 export interface TraceEventsAck {
