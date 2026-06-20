@@ -7,34 +7,21 @@
  */
 export function generateNodeLabel(node: any, index: number): string {
   const stepNumber = index + 1;
-  
+
   switch (node.type) {
-    case "llm_start":
-      return "LLM Processing";
-    case "llm_end":
-      return "LLM Response";
-    case "tool_start":
-      if (node.toolName) {
-        return `${node.toolName} Call`;
-      }
-      return "Tool Execution";
-    case "tool_end":
-      if (node.toolName) {
-        return `${node.toolName} Result`;
-      }
-      return "Tool Complete";
-    case "chain_start":
-      return "Process Start";
-    case "chain_end":
-      return "Process Complete";
     case "llm":
-      return node.metadata?.model || node.data?.model || `LLM Call ${stepNumber}`;
+      return node.model && node.model !== "unknown" ? node.model : `LLM Call ${stepNumber}`;
     case "tool":
-      return node.toolName || node.data?.toolName || `Tool Call ${stepNumber}`;
+      return node.toolName || `Tool ${stepNumber}`;
     case "chain":
-      return node.metadata?.chainName || node.data?.chainName || `Chain ${stepNumber}`;
+      // deriveDisplay sets chainName = span name for chain/agent/retriever.
+      return node.chainName || `Chain ${stepNumber}`;
+    case "agent":
+      return node.chainName || `Agent ${stepNumber}`;
+    case "retriever":
+      return node.chainName || `Retriever ${stepNumber}`;
     default:
-      return `Step ${stepNumber}`;
+      return node.chainName || node.toolName || `Step ${stepNumber}`;
   }
 }
 

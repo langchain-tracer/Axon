@@ -10,7 +10,7 @@ export async function stop() {
 
   try {
     // Find and kill processes running on common ports
-    const ports = [3000, 5173]; // Backend and dashboard ports
+    const ports = [4000]; // Axon single-service port
     const killPromises: Promise<void>[] = [];
 
     for (const port of ports) {

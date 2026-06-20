@@ -1,3 +1,9 @@
+> ⚠️ **DEPRECATED.** Axon is now **OTLP-native** — it ingests standard OpenTelemetry
+> spans, so you no longer need an Axon-specific tracer. Use off-the-shelf
+> instrumentation like **[OpenLLMetry](https://github.com/traceloop/openllmetry)**
+> (`@traceloop/node-server-sdk`) or **OpenInference**, pointed at your Axon URL
+> (default `http://localhost:4000`). This package will be removed in a future major.
+
 # OpenAI Function Calling Tracer
 
 A comprehensive tracing solution for OpenAI Function Calling agents, providing detailed monitoring, cost analysis, and performance insights.

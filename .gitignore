@@ -17,10 +17,17 @@ backend/backend.log
 backend/logs/
 
 # Database files
+*.db
 *.db-shm
 *.db-wal
 backend/data/*.db
 !backend/data/.gitkeep
+
+# CLI-local trace store (created by `axon start`)
+.axon-ai/
+
+# Generated CLI bundle (built by `npm run bundle`)
+packages/cli/bundled/
 
 # Temporary files
 *.tmp

@@ -1230,6 +1230,9 @@ async function getConfigurationStatus() {
     source: projectName === "default" ? "default" : "package-json"
   };
 }
+console.warn(
+  "[axon] @axon-ai/langchain-tracer is deprecated — Axon is now OTLP-native. Use OpenLLMetry/OpenInference pointed at http://localhost:4000. See https://github.com/langchain-tracer/Axon"
+);
 function createTracer(config) {
   return new TracingCallbackHandler(config);
 }

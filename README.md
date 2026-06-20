@@ -1,157 +1,112 @@
-# Axon: Real-time LangChain Agent Monitoring
+# Axon — local, OpenTelemetry-native LLM observability
 
-Axon is a powerful command-line interface (CLI) tool designed to provide real-time monitoring and visualization for your LangChain agents. With Axon, you can effortlessly track the execution flow, inputs, outputs, and intermediate steps of your AI agents directly within a user-friendly dashboard, making debugging and optimization a breeze.
+Axon is a single CLI that runs a local backend **and** dashboard on one URL and
+ingests **standard OpenTelemetry (OTLP) traces** from any framework or SDK. Point
+any OTEL/OpenLLMetry exporter at it and watch your LLM/agent runs render in
+real time — no Axon-specific SDK required.
 
 ## ✨ Features
 
-- **Real-time Tracing**: Monitor LangChain agent executions as they happen.
-- **Intuitive Dashboard**: Visualize agent traces, chain calls, and tool usage in a dedicated web interface.
-- **Easy Integration**: Seamlessly integrate with existing LangChain models, agents, and chains with minimal code changes.
-- **Project Organization**: Manage and view traces for multiple AI projects.
-- **Local Development Focus**: Designed for developers to quickly set up and debug their LangChain applications locally.
+- **OTEL-native ingestion** — exposes a standard `POST /v1/traces` (OTLP/HTTP, JSON + protobuf).
+- **Works with everything** — LangChain, OpenAI, Anthropic, LlamaIndex, … via off-the-shelf
+  instrumentation ([OpenLLMetry](https://github.com/traceloop/openllmetry) / OpenInference).
+- **One install, one URL** — the CLI bundles the backend + dashboard; `axon start` serves
+  the UI, REST API, OTLP ingest, and live updates all on `http://localhost:4000`.
+- **Readable trace views** — **Transcript** (the run as a chat dialogue), **Tree**
+  (hierarchy + duration bars), **Waterfall**, and a **Raw** OTEL span inspector.
+- **Cost tracking** — per-model token pricing with a cost-by-model breakdown; an explicit
+  cost attribute on a span always wins.
+- **Live** — Server-Sent Events push new/updated traces to the dashboard instantly.
 
-## 🚀 Installation
-
-You can install the Axon CLI globally or locally within your project.
-
-### Global Installation (Recommended)
-
-For easy access from anywhere on your system:
+## 🚀 Install
 
 ```bash
 npm install -g @axon-ai/cli
 ```
 
-### Local Installation
-
-If you prefer to manage Axon as a project dependency:
+## ⚡ Quick start
 
 ```bash
-npm install @axon-ai/cli
-# Then use npx to run commands
-npx axon-ai --help
+axon start
+#   ✔ Axon running at http://localhost:4000
 ```
 
-## ⚡ Quick Start
+Then point any OpenTelemetry exporter at Axon and run your app. With
+**OpenLLMetry** (Node):
 
-Get your LangChain project traced with Axon in just a few steps:
+```ts
+import * as traceloop from "@traceloop/node-server-sdk";
 
-1.  **Initialize Axon in your project directory:**
-    This creates a `.axon-ai/config.json` file to manage your project settings.
-    ```bash
-    axon-ai init --project my-ai-project
-    ```
+traceloop.initialize({ baseUrl: "http://localhost:4000" }); // Axon's URL
+// now use LangChain / OpenAI / Anthropic / LlamaIndex as usual — traces appear in Axon
+```
 
-2.  **Start the Axon dashboard and backend services:**
-    This will launch the monitoring dashboard in your browser.
-    ```bash
-    axon-ai start
-    ```
+Or with a raw OpenTelemetry SDK, just set the standard endpoint:
 
-3.  **Integrate the tracer into your LangChain application:**
-    Add the `createTracer` callback to your LangChain models, agents, or chains.
+```bash
+OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4000
+```
 
-    ```javascript
-    import { createTracer } from '@axon-ai/langchain-tracer';
-    import { ChatOpenAI } from '@langchain/openai';
-    
-    // Create the Axon tracer instance
-    const tracer = createTracer({
-      projectName: 'my-ai-project' // Must match the project name used in `axon-ai init`
-    });
-    
-    // Add the tracer to your model's callbacks
-    const model = new ChatOpenAI({
-      modelName: 'gpt-3.5-turbo',
-      callbacks: [tracer] // <--- Add this line
-    });
-    
-    // Example: Use the model
-    const response = await model.invoke("Hello, how are you?");
-    console.log(response);
-    ```
+Open **http://localhost:4000** (use `http://127.0.0.1:4000` on Windows if `localhost`
+won't connect) to explore your traces.
 
-4.  **Run your LangChain application** and watch the traces appear in the Axon dashboard in real-time!
+> Tip: to confirm ingestion without an app, POST a sample span:
+> ```bash
+> curl -X POST http://localhost:4000/v1/traces -H "Content-Type: application/json" \
+>   -d '{"resourceSpans":[{"resource":{"attributes":[{"key":"service.name","value":{"stringValue":"demo"}}]},"scopeSpans":[{"spans":[{"traceId":"00000000000000000000000000000001","spanId":"0000000000000001","name":"chat","kind":3,"startTimeUnixNano":"1700000000000000000","endTimeUnixNano":"1700000001000000000","attributes":[{"key":"gen_ai.request.model","value":{"stringValue":"gpt-4o"}}],"status":{"code":1}}]}]}]}'
+> ```
 
 ## 📚 Commands
 
-The Axon CLI provides several commands to manage your monitoring environment:
+- `axon start [options]` — start Axon (backend + dashboard on one URL).
+  - `-p, --port <port>` — port to serve on (default: `4000`).
+  - `--no-open` — don't open the browser automatically.
+  - `--project <name>` — project name for organizing traces.
+- `axon status` — check whether Axon is running.
+- `axon stop` — stop Axon.
+- `axon version` — print the CLI version.
 
--   `axon-ai init [options]`: Initializes Axon in your project, creating a configuration file.
-    -   `--project <name>`: Specify a project name (default: "default").
-    -   `--auto-start`: Automatically start the dashboard after initialization.
--   `axon-ai start [options]`: Starts the Axon backend server and dashboard.
-    -   `-p, --port <port>`: Backend server port (default: 3000).
-    -   `-d, --dashboard-port <port>`: Dashboard port (default: 5173).
-    -   `--no-open`: Prevent automatic opening of the dashboard in the browser.
-    -   `--project <name>`: Specify the project to trace.
--   `axon-ai status`: Checks the status of Axon services (project info, server, dashboard).
--   `axon-ai stop`: Stops all running Axon services.
--   `axon-ai version`: Displays the installed Axon CLI version.
+(`axon`, `axon-ai`, and `agent-trace` are all aliases for the same CLI.)
 
-## 🔗 LangChain Integration Examples
+## 🧠 How it works
 
-### Basic Model Integration
-
-```javascript
-import { createTracer } from '@axon-ai/langchain-tracer';
-import { ChatOpenAI } from '@langchain/openai';
-
-const tracer = createTracer({ projectName: 'my-project' });
-const model = new ChatOpenAI({
-  modelName: 'gpt-3.5-turbo',
-  callbacks: [tracer]
-});
+```
+your app  ──OTLP/HTTP──▶  Axon backend (:4000)  ──▶  SQLite
+(OpenLLMetry/OpenInference/    /v1/traces                │
+ native OTEL exporter)                                   ▼
+                                              dashboard + REST + SSE  ──▶  browser
 ```
 
-### Agent Integration
+Each OTLP span is classified (`llm`/`tool`/`chain`/`retriever`/`agent`) from
+`gen_ai.*` / OpenInference / OpenLLMetry semantic conventions, the **verbatim span**
+is stored once, and the dashboard derives everything it shows from it. Traces are
+stored per project under `./.axon-ai/traces.db` where you run `axon start`.
 
-```javascript
-import { AgentExecutor, createOpenAIFunctionsAgent } from 'langchain/agents';
-// ... other imports for tools and prompt
+## ⚠️ Migrating from the old tracer packages
 
-const agent = await createOpenAIFunctionsAgent({ /* ... */ });
-const agentExecutor = new AgentExecutor({
-  agent,
-  tools: [searchTool, calculatorTool],
-  callbacks: [tracer] // Add tracer to the executor
-});
-```
+`@axon-ai/langchain-tracer` and `@axon-ai/openai-tracer` are **deprecated**. Axon no
+longer needs an Axon-specific SDK — use standard OTEL instrumentation
+(OpenLLMetry/OpenInference) pointed at `http://localhost:4000` instead.
 
-### Chain Integration
+## 🤝 Development
 
-```javascript
-import { LLMChain } from 'langchain/chains';
-
-const chain = new LLMChain({
-  llm: model,
-  prompt: myPrompt,
-  callbacks: [tracer]
-});
-```
-
-## 🛠️ Troubleshooting
-
-Refer to the Troubleshooting section in the CLI documentation for common issues like "Port Already in Use" or services not starting.
-
-## 🤝 Contributing
-
-We welcome contributions! If you're interested in developing Axon:
+Monorepo (npm workspaces: `backend`, `dashboard`, `packages/*`).
 
 ```bash
-git clone https://github.com/yourusername/langchain-tracer/Axon.git
-cd axon-ai
+git clone https://github.com/langchain-tracer/Axon.git
+cd Axon
 npm install
-npm run build:cli
+npm run build          # build backend + dashboard + cli
+npm run dev            # backend on :4000 + dashboard dev server on :5173 (proxied)
+npm run test --workspaces   # run tests
 ```
 
-For running in development:
+To produce the publishable CLI (bundles backend + dashboard into the package):
 
 ```bash
-cd packages/cli
-npm run dev
+npm run bundle --workspace=@axon-ai/cli
 ```
 
 ## 📄 License
 
-This project is licensed under the MIT License - see the LICENSE file for details.
+MIT — see the LICENSE file.

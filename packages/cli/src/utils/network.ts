@@ -1,18 +1,23 @@
-import { exec } from 'child_process';
-import { promisify } from 'util';
-
-const execAsync = promisify(exec);
+import net from 'net';
 
 /**
- * Check if a port is in use
+ * Check if a port is in use (cross-platform).
+ * Resolves true if something is already listening on the port.
  */
 export async function checkPort(port: number): Promise<boolean> {
-  try {
-    const { stdout } = await execAsync(`lsof -ti:${port}`);
-    return stdout.trim().length > 0;
-  } catch (error) {
-    return false;
-  }
+  return new Promise((resolve) => {
+    const socket = net.createConnection({ port, host: '127.0.0.1' });
+    socket.setTimeout(800);
+    socket.once('connect', () => {
+      socket.destroy();
+      resolve(true);
+    });
+    socket.once('timeout', () => {
+      socket.destroy();
+      resolve(false);
+    });
+    socket.once('error', () => resolve(false));
+  });
 }
 
 /**
