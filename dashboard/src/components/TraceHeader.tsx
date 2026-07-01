@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import type { TraceDetail } from '../types';
 import { formatCost, formatDuration } from '../lib/format';
 
-const T = { surface: '#0f1117', border: '#1e2535', text: '#f8fafc', vfaint: '#64748b' };
+const T = { surface: '#1b1f2c', border: '#434655', text: '#eef0fa', vfaint: '#9aa1b8' };
 const STATUS: Record<string, { bg: string; text: string; label: string }> = {
   complete: { bg: 'rgba(34,197,94,0.1)',  text: '#4ade80', label: 'Completed' },
   running:  { bg: 'rgba(245,158,11,0.1)', text: '#fbbf24', label: 'Running'   },
@@ -76,7 +76,7 @@ export function TraceHeader({ detail }: { detail: TraceDetail }) {
           {costByModel.map(([model, { cost, tokens: tok }]) => (
             <div key={model} style={{
               display: 'flex', alignItems: 'center', gap: 5,
-              background: '#0b0d10', border: `1px solid ${T.border}`,
+              background: '#0a0e1a', border: `1px solid ${T.border}`,
               borderRadius: 20, padding: '3px 10px',
             }}>
               <svg width="8" height="8" viewBox="0 0 8 8">
