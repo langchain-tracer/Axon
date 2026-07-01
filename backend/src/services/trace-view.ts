@@ -39,9 +39,30 @@ export function listTraces(project?: string) {
   const enhancedTraces = traces.map((trace: any) => {
     const nodes = db.query("SELECT cost, type FROM nodes WHERE trace_id = ?", [trace.id]);
     const totalCost = nodes.reduce((sum: number, node: any) => sum + (node.cost || 0), 0);
+
+    // Extract a human-readable description from the first span's prompt or span name
+    let description = "";
+    try {
+      const firstNode = db.get<any>(
+        "SELECT data FROM nodes WHERE trace_id = ? ORDER BY start_time ASC LIMIT 1",
+        [trace.id],
+      );
+      if (firstNode?.data) {
+        const data = typeof firstNode.data === "string" ? JSON.parse(firstNode.data) : firstNode.data;
+        const attrs = data?.raw?.attributes ?? {};
+        const prompt =
+          attrs["gen_ai.prompt.0.content"] ??
+          attrs["gen_ai.prompt"] ??
+          attrs["input.value"] ??
+          attrs["ai.prompt.messages"];
+        description = prompt ? String(prompt) : (data?.raw?.name ?? "");
+      }
+    } catch {}
+
     return {
       id: trace.id,
       projectName: trace.project_name ?? trace.projectName ?? "default",
+      description,
       status: trace.status,
       startTime: trace.start_time ?? trace.startTime,
       endTime: trace.end_time ?? trace.endTime,
