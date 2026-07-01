@@ -2,7 +2,7 @@ import { useState } from 'react';
 import type { Span } from '../types';
 import { formatCost, formatDuration } from '../lib/format';
 
-const T = { surface: '#0f1117', bg: '#0b0d10', border: '#1e2535', text: '#f1f5f9', muted: '#94a3b8', vfaint: '#64748b' };
+const T = { surface: '#1b1f2c', bg: '#0a0e1a', border: '#434655', text: '#eef0fa', muted: '#9aa1b8', vfaint: '#9aa1b8' };
 
 const TYPE_CFG: Record<string, { color: string; bg: string; label: string }> = {
   llm:   { color: '#60a5fa', bg: 'rgba(59,130,246,0.12)',  label: 'LLM'   },

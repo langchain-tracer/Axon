@@ -40,22 +40,50 @@ export function listTraces(project?: string) {
     const nodes = db.query("SELECT cost, type FROM nodes WHERE trace_id = ?", [trace.id]);
     const totalCost = nodes.reduce((sum: number, node: any) => sum + (node.cost || 0), 0);
 
-    // Extract a human-readable description from the first span's prompt or span name
+    // Extract a human-readable description from span prompts across the first few nodes
     let description = "";
     try {
-      const firstNode = db.get<any>(
-        "SELECT data FROM nodes WHERE trace_id = ? ORDER BY start_time ASC LIMIT 1",
+      const earlyNodes = db.query<any>(
+        "SELECT data FROM nodes WHERE trace_id = ? ORDER BY start_time ASC LIMIT 10",
         [trace.id],
       );
-      if (firstNode?.data) {
-        const data = typeof firstNode.data === "string" ? JSON.parse(firstNode.data) : firstNode.data;
+      for (const nodeRow of earlyNodes) {
+        const data = typeof nodeRow.data === "string" ? JSON.parse(nodeRow.data) : nodeRow.data;
         const attrs = data?.raw?.attributes ?? {};
-        const prompt =
+
+        const direct =
           attrs["gen_ai.prompt.0.content"] ??
           attrs["gen_ai.prompt"] ??
-          attrs["input.value"] ??
-          attrs["ai.prompt.messages"];
-        description = prompt ? String(prompt) : (data?.raw?.name ?? "");
+          attrs["ai.prompt"] ??
+          attrs["input.value"];
+
+        if (direct) {
+          description = String(direct).slice(0, 200);
+          break;
+        }
+
+        // ai.prompt.messages is a JSON array of {role, content} objects (Vercel AI SDK)
+        const messages = attrs["ai.prompt.messages"];
+        if (messages) {
+          try {
+            const parsed = typeof messages === "string" ? JSON.parse(messages) : messages;
+            if (Array.isArray(parsed)) {
+              const userMsg = parsed.find((m: any) => m.role === "user");
+              const content = userMsg?.content;
+              if (typeof content === "string" && content) {
+                description = content.slice(0, 200);
+                break;
+              }
+              if (Array.isArray(content)) {
+                const textPart = content.find((p: any) => p.type === "text");
+                if (textPart?.text) {
+                  description = String(textPart.text).slice(0, 200);
+                  break;
+                }
+              }
+            }
+          } catch {}
+        }
       }
     } catch {}
 

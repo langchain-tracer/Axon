@@ -23,5 +23,8 @@
     "@axon-ai/cli": "^1.0.5",
     "sqlite": "^5.1.1",
     "sqlite3": "^5.1.7"
+  },
+  "optionalDependencies": {
+    "@esbuild/win32-x64": "^0.28.1"
   }
 }

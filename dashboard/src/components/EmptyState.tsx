@@ -1,6 +1,6 @@
 import { useState } from 'react';
 
-const T = { border: '#1e2535', surface: '#0f1117', bg: '#0b0d10', faint: '#cbd5e1', vfaint: '#94a3b8' };
+const T = { border: '#434655', surface: '#1b1f2c', bg: '#0a0e1a', faint: '#eef0fa', vfaint: '#9aa1b8' };
 
 export function EmptyState() {
   const [copied, setCopied] = useState(false);
@@ -86,7 +86,7 @@ const tracer = new AxonTracer({
 }
 
 function CodeBlock({ lang, code }: { lang: string; code: string }) {
-  const T2 = { border: '#1c2030', surface: '#0f1117', bg: '#0b0d10' };
+  const T2 = { border: '#434655', surface: '#1b1f2c', bg: '#0a0e1a' };
   return (
     <div style={{ background: T2.surface, border: `1px solid ${T2.border}`, borderRadius: 6, overflow: 'hidden' }}>
       <div style={{ padding: '8px 13px', borderBottom: `1px solid ${T2.border}`, background: T2.bg }}>

@@ -6,12 +6,12 @@
 body {
   margin: 0;
   padding: 0;
-  font-family: 'Space Grotesk', system-ui, sans-serif;
+  font-family: 'Satoshi', system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   overflow: hidden;
-  background: #0b0d10;
-  color: #c4d0e8;
+  background: #0f131f;
+  color: #eef0fa;
 }
 
 #root {
@@ -45,7 +45,7 @@ code {
 /* Custom scrollbar */
 ::-webkit-scrollbar { width: 4px; height: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: #1e2535; border-radius: 2px; }
+::-webkit-scrollbar-thumb { background: #434655; border-radius: 2px; }
 
 @keyframes axon-fadein {
   from { opacity: 0; transform: translateX(10px); }
