@@ -148,17 +148,23 @@ export function TraceList({
                   </div>
                 </div>
 
-                {/* Project / span name */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 3 }}>
-                  <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
+                {/* Description / project name */}
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 5, marginBottom: 3 }}>
+                  <svg width="13" height="13" viewBox="0 0 13 13" fill="none" style={{ flexShrink: 0, marginTop: 2 }}>
                     <path d="M4.5 2H3.5c-.6 0-1 .45-1 1v1.5L1.5 6.5l1 2V10c0 .55.4 1 1 1h1M8.5 2h1c.6 0 1 .45 1 1v1.5L11.5 6.5l-1 2V10c0 .55-.4 1-1 1h-1"
                       stroke="#3a9a8a" strokeWidth="1.15" strokeLinecap="round" strokeLinejoin="round"/>
                   </svg>
                   <span style={{
                     fontSize: 12, color: T.text, fontWeight: 500,
-                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                    overflow: 'hidden', display: '-webkit-box',
+                    WebkitLineClamp: 2, WebkitBoxOrient: 'vertical',
+                    wordBreak: 'break-word',
                   }}>
-                    {(t.projectName?.startsWith('unknown_service') ? 'unknown_service' : t.projectName) || 'default'}
+                    {(() => {
+                      const desc = t.description?.trim();
+                      const name = t.projectName?.startsWith('unknown_service') ? '' : t.projectName;
+                      return desc || name || 'unknown_service';
+                    })()}
                   </span>
                 </div>
 
