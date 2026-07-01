@@ -110,12 +110,12 @@ function ToolCard({ span, onSelect }: { span: Span; onSelect: (s: Span) => void 
           {span.toolName || span.label}
         </span>
         <span style={{
-          fontSize: 10, color: '#64748b', background: '#0b0f0d',
-          padding: '1px 6px', borderRadius: 3, border: '1px solid #1a2820',
+          fontSize: 12, fontWeight: 600, color: '#e2e8f0', background: '#0b0f0d',
+          padding: '2px 8px', borderRadius: 3, border: '1px solid #1a2820',
         }}>
           {formatDuration(span.latency)}
         </span>
-        <span style={{ fontSize: 10, fontWeight: 500, color: isError ? '#f87171' : '#4ade80' }}>
+        <span style={{ fontSize: 12, fontWeight: 700, color: isError ? '#f87171' : '#4ade80' }}>
           {isError ? 'Error' : 'Done'}
         </span>
       </div>
