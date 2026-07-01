@@ -127,7 +127,6 @@ export class NodeModel {
    * Create a node
    */
   static create(node: Node): Node {
-    console.log(`[NodeModel.create] Inserting node - type: ${node.type}, model: "${node.model}", runId: ${node.runId}`);
     db.run(
       `INSERT INTO nodes (
         id, trace_id, run_id, parent_run_id, type, status,
@@ -266,7 +265,8 @@ export class EdgeModel {
     db.run(
       `INSERT INTO edges (id, trace_id, from_node, to_node)
        VALUES (?, ?, ?, ?)`,
-      [edge.id, edge.traceId, edge.fromNode, edge.toNode]
+      [edge.id, edge.traceId, edge.fromNode, edge.toNode],
+      { silent: true }
     );
 
     const row = db.get<any>("SELECT * FROM edges WHERE id = ?", [edge.id]);
