@@ -57,11 +57,11 @@ export function TraceHeader({ detail }: { detail: TraceDetail }) {
       <div style={{ display: 'flex', gap: 0, marginBottom: 10, flexWrap: 'wrap' }}>
         {stats_list.map(st => (
           <div key={st.label} style={{ paddingRight: 24, paddingBottom: 4 }}>
-            <div style={{ fontSize: 9, fontWeight: 600, color: T.vfaint, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+            <div style={{ fontSize: 9, fontWeight: 600, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
               {st.label}
             </div>
             <div style={{
-              fontSize: 16, fontWeight: 600, color: T.text,
+              fontSize: 20, fontWeight: 700, color: '#ffffff',
               fontFamily: "'JetBrains Mono', monospace", fontVariantNumeric: 'tabular-nums',
             }}>
               {st.value}
