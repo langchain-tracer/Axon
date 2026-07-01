@@ -20,14 +20,14 @@ const TABS = [
   { id: 'raw',        label: 'Raw'        },
 ];
 
-// Design tokens from handoff
+// Design tokens — exact Lumina palette
 const T = {
-  bg:      '#0b0d10',
-  surface: '#0f1117',
-  border:  '#1c2030',
-  text:    '#c4d0e8',
-  muted:   '#4a5a72',
-  faint:   '#4a5a72',
+  bg:      '#0f131f',
+  surface: '#171b28',
+  border:  '#434655',
+  text:    '#eef0fa',
+  muted:   '#9aa1b8',
+  faint:   '#9aa1b8',
 };
 
 export default function App() {
@@ -57,13 +57,17 @@ export default function App() {
   const nodes = detail?.nodes ?? [];
   const edges = detail?.edges ?? [];
 
-  const projectName = detail?.trace.project ?? traces[0]?.projectName ?? 'my-agent';
+  const projectName = (() => {
+    const raw = detail?.trace.project ?? traces[0]?.projectName ?? 'my-agent';
+    if (!raw || raw.startsWith('unknown_service')) return 'my-agent';
+    return raw;
+  })();
 
   return (
     <div style={{
       display: 'flex', flexDirection: 'column', height: '100vh',
       background: T.bg, color: T.text,
-      fontFamily: "'Space Grotesk', system-ui, sans-serif",
+      fontFamily: "'Satoshi', system-ui, sans-serif",
       fontSize: 13, overflow: 'hidden',
     }}>
 

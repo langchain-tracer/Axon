@@ -1,6 +1,6 @@
 {
   "name": "@axon-ai/cli",
-  "version": "1.0.6",
+  "version": "1.0.9",
   "description": "CLI tool for Axon - Monitor LangChain agents in real-time",
   "type": "module",
   "bin": {
