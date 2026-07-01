@@ -57,6 +57,7 @@ export interface Edge {
 export interface TraceSummary {
   id: string;
   projectName?: string;
+  description?: string;
   status: SpanStatus;
   startTime: number;
   endTime?: number;
