@@ -1,4 +1,4 @@
-const T = { surface: '#0f1117', border: '#1c2030', text: '#c4d0e8', muted: '#4a5a72' };
+const T = { surface: '#0f1117', border: '#1c2030', text: '#ffffff', muted: '#64748b' };
 
 export interface Tab { id: string; label: string; }
 

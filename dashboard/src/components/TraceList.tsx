@@ -158,7 +158,7 @@ export function TraceList({
                     fontSize: 12, color: T.text, fontWeight: 500,
                     overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                   }}>
-                    {t.projectName || 'default'}
+                    {(t.projectName?.startsWith('unknown_service') ? 'unknown_service' : t.projectName) || 'default'}
                   </span>
                 </div>
 
