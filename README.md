@@ -1,7 +1,7 @@
 # Axon
 
 <p align="center">
-  <img src="docs/axon-logo.svg" alt="Axon Logo" width="240"/>
+  <img src="dashboard/public/logo-latest.svg" alt="Axon Logo" width="240"/>
 </p>
 
 Axon is a local observability tool for LangChain and OpenTelemetry-instrumented AI agents. It receives trace data from your application, stores it on your machine, and gives you a real-time dashboard to monitor and debug every LLM call, tool invocation, and chain execution. No cloud account is required and no data leaves your environment.
