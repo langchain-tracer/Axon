@@ -148,24 +148,30 @@ export function TraceList({
                   </div>
                 </div>
 
-                {/* Description / project name */}
+                {/* Span name (operation) */}
                 <div style={{ display: 'flex', alignItems: 'flex-start', gap: 5, marginBottom: 3 }}>
                   <svg width="13" height="13" viewBox="0 0 13 13" fill="none" style={{ flexShrink: 0, marginTop: 2 }}>
                     <path d="M4.5 2H3.5c-.6 0-1 .45-1 1v1.5L1.5 6.5l1 2V10c0 .55.4 1 1 1h1M8.5 2h1c.6 0 1 .45 1 1v1.5L11.5 6.5l-1 2V10c0 .55-.4 1-1 1h-1"
                       stroke="#3a9a8a" strokeWidth="1.15" strokeLinecap="round" strokeLinejoin="round"/>
                   </svg>
-                  <span style={{
-                    fontSize: 12, color: T.text, fontWeight: 500,
-                    overflow: 'hidden', display: '-webkit-box',
-                    WebkitLineClamp: 2, WebkitBoxOrient: 'vertical',
-                    wordBreak: 'break-word',
-                  }}>
-                    {(() => {
-                      const desc = t.description?.trim();
-                      const name = t.projectName?.startsWith('unknown_service') ? '' : t.projectName;
-                      return desc || name || 'No description';
-                    })()}
-                  </span>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{
+                      fontSize: 12, color: T.text, fontWeight: 500,
+                      overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                    }}>
+                      {t.name || (t.projectName?.startsWith('unknown_service') ? '' : t.projectName) || 'Unnamed trace'}
+                    </div>
+                    {t.description?.trim() && (
+                      <div style={{
+                        fontSize: 11, color: T.muted, marginTop: 1,
+                        overflow: 'hidden', display: '-webkit-box',
+                        WebkitLineClamp: 2, WebkitBoxOrient: 'vertical',
+                        wordBreak: 'break-word',
+                      }}>
+                        {t.description.trim()}
+                      </div>
+                    )}
+                  </div>
                 </div>
 
                 {/* Timestamp */}

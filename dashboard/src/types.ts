@@ -56,6 +56,7 @@ export interface Edge {
 
 export interface TraceSummary {
   id: string;
+  name?: string;
   projectName?: string;
   description?: string;
   status: SpanStatus;

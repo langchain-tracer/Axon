@@ -42,54 +42,85 @@ export function listTraces(project?: string) {
 
     // Extract a human-readable description from span prompts across the first few nodes
     let description = "";
+    let spanName = "";
     try {
       const earlyNodes = db.query<any>(
         "SELECT data FROM nodes WHERE trace_id = ? ORDER BY start_time ASC LIMIT 10",
         [trace.id],
       );
+
+      // Pull the root span name (OTel span name) from the first node
+      if (earlyNodes.length > 0) {
+        const firstData =
+          typeof earlyNodes[0].data === "string"
+            ? JSON.parse(earlyNodes[0].data)
+            : earlyNodes[0].data;
+        spanName = firstData?.raw?.name ?? "";
+      }
       for (const nodeRow of earlyNodes) {
         const data = typeof nodeRow.data === "string" ? JSON.parse(nodeRow.data) : nodeRow.data;
         const attrs = data?.raw?.attributes ?? {};
 
-        const direct =
-          attrs["gen_ai.prompt.0.content"] ??
-          attrs["gen_ai.prompt"] ??
-          attrs["ai.prompt"] ??
-          attrs["input.value"];
+        // Try all candidate attributes that may hold the user prompt
+        const candidates = [
+          attrs["gen_ai.prompt.0.content"],
+          attrs["gen_ai.prompt"],
+          attrs["ai.prompt"],
+          attrs["ai.prompt.messages"],
+          attrs["input.value"],
+        ];
 
-        if (direct) {
-          description = String(direct).slice(0, 200);
-          break;
-        }
+        let found = false;
+        for (const candidate of candidates) {
+          if (!candidate) continue;
+          const str = String(candidate).trim();
 
-        // ai.prompt.messages is a JSON array of {role, content} objects (Vercel AI SDK)
-        const messages = attrs["ai.prompt.messages"];
-        if (messages) {
+          // Plain string — use directly
+          if (!str.startsWith("{") && !str.startsWith("[")) {
+            description = str.slice(0, 200);
+            found = true;
+            break;
+          }
+
+          // JSON-encoded prompt — parse and extract the first user message text
           try {
-            const parsed = typeof messages === "string" ? JSON.parse(messages) : messages;
-            if (Array.isArray(parsed)) {
-              const userMsg = parsed.find((m: any) => m.role === "user");
-              const content = userMsg?.content;
-              if (typeof content === "string" && content) {
-                description = content.slice(0, 200);
+            const parsed = JSON.parse(str);
+            // Handle both {"messages":[...]} and [...] shapes
+            const msgs: any[] = Array.isArray(parsed)
+              ? parsed
+              : Array.isArray(parsed?.messages)
+              ? parsed.messages
+              : [];
+
+            // Prefer user role; fall back to any role with text content
+            const target = msgs.find((m: any) => m.role === "user") ?? msgs[0];
+            if (!target) continue;
+
+            const content = target.content;
+            if (typeof content === "string" && content) {
+              description = content.slice(0, 200);
+              found = true;
+              break;
+            }
+            if (Array.isArray(content)) {
+              const textPart = content.find((p: any) => p.type === "text");
+              if (textPart?.text) {
+                description = String(textPart.text).slice(0, 200);
+                found = true;
                 break;
-              }
-              if (Array.isArray(content)) {
-                const textPart = content.find((p: any) => p.type === "text");
-                if (textPart?.text) {
-                  description = String(textPart.text).slice(0, 200);
-                  break;
-                }
               }
             }
           } catch {}
         }
+
+        if (found) break;
       }
     } catch {}
 
     return {
       id: trace.id,
       projectName: trace.project_name ?? trace.projectName ?? "default",
+      name: spanName,
       description,
       status: trace.status,
       startTime: trace.start_time ?? trace.startTime,
