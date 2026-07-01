@@ -1,6 +1,31 @@
 # Axon
 
+<p align="center">
+  <img src="docs/axon-logo.svg" alt="Axon Logo" width="240"/>
+</p>
+
 Axon is a local observability tool for LangChain and OpenTelemetry-instrumented AI agents. It receives trace data from your application, stores it on your machine, and gives you a real-time dashboard to monitor and debug every LLM call, tool invocation, and chain execution. No cloud account is required and no data leaves your environment.
+
+---
+
+### Features
+
+**Empty state — shows your OTLP endpoint and integration snippets the moment Axon starts**
+![Overview](docs/screenshots/overview.png)
+
+### Trace Views
+
+**Transcript — renders the run as a conversation with tool call inputs and outputs inline**
+![Transcript](docs/screenshots/transcript.png)
+
+**Waterfall — each span as a horizontal bar on a shared time axis with a detail panel**
+![Waterfall](docs/screenshots/wateerfall.png)
+
+**Tree — parent-child span hierarchy with type icons, model names, and token counts**
+![Tree](docs/screenshots/tree.png)
+
+**Raw — full JSON of every span with a copy button**
+![Raw](docs/screenshots/Raw.png)
 
 ---
 
@@ -72,26 +97,7 @@ Run your application and switch to the dashboard. Traces appear automatically as
 
 ---
 
-## The dashboard
 
-The dashboard is divided into three panels.
-
-The left sidebar lists every trace recorded for the current project. Each entry shows a shortened trace ID, a status indicator, the project name, span count, total cost, and the time the trace started. You can search by trace ID or project name using the search field at the top. Clicking a trace loads it in the main panel.
-
-The main panel shows a header bar with summary statistics for the selected trace: total spans, duration, cost, token count, LLM call count, tool call count, and a per-model cost breakdown. Below the header, four tabs give you different views of the same trace data.
-
-- Transcript renders the run as a conversation. LLM turns show the prompt and response as chat bubbles. Tool calls show the input arguments and the output result inline.
-- Waterfall renders each span as a horizontal bar on a shared time axis so you can see where time is being spent across the full run.
-- Tree shows the parent-child span hierarchy as an indented list with span type icons and token counts.
-- Raw shows the full JSON of every span with a copy button.
-
-The right detail panel opens when you click any span in any view. It shows the span type, model name, status, latency, cost, token breakdown (prompt tokens plus completion tokens), raw input, raw output, and span attributes. Clicking the close button dismisses it.
-
-Span types are colour-coded throughout the dashboard. Blue indicates an LLM call. Green indicates a tool call. Purple indicates a chain or agent wrapper span.
-
-If no traces have been recorded yet, the main panel shows the OTLP endpoint URL and code snippets for both Python and Node.js so you can get your first trace flowing without leaving the browser.
-
----
 
 ## CLI reference
 
