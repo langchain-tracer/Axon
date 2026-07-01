@@ -1,8 +1,4 @@
-/**
- * SQLite connection and query utilities
- */
-
-import Database from "better-sqlite3";
+import { DatabaseSync, StatementSync } from "node:sqlite";
 import { logger } from "../utils/logger.js";
 import path from "path";
 import { mkdirSync } from "fs";
@@ -11,40 +7,30 @@ import { fileURLToPath } from "url";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+type RunResult = { changes: number | bigint; lastInsertRowid: number | bigint };
+
 class SQLiteDatabase {
-  private db: Database.Database;
+  private db: DatabaseSync;
 
   constructor() {
     const dbPath =
       process.env.DATABASE_PATH || path.join(__dirname, "../../data/traces.db");
 
-    // Ensure the parent directory exists (better-sqlite3 won't create it).
     mkdirSync(path.dirname(dbPath), { recursive: true });
 
     logger.info("Connecting to SQLite database:", dbPath);
 
-    this.db = new Database(dbPath, {
-      verbose:
-        process.env.NODE_ENV === "development"
-          ? (msg) => logger.debug("SQL:", msg)
-          : undefined
-    });
+    this.db = new DatabaseSync(dbPath);
 
-    // Enable WAL mode for better concurrency
-    this.db.pragma("journal_mode = WAL");
-
-    // Foreign keys
-    this.db.pragma("foreign_keys = ON");
+    this.db.exec("PRAGMA journal_mode = WAL");
+    this.db.exec("PRAGMA foreign_keys = ON");
 
     logger.info("SQLite database connected");
   }
 
-  /**
-   * Execute a query and return all rows
-   */
   query<T = any>(sql: string, params?: any[]): T[] {
     try {
-      const stmt = this.db.prepare(sql);
+      const stmt: StatementSync = this.db.prepare(sql);
       const result = params ? stmt.all(...params) : stmt.all();
       return result as T[];
     } catch (error) {
@@ -53,12 +39,9 @@ class SQLiteDatabase {
     }
   }
 
-  /**
-   * Execute a query and return first row
-   */
   get<T = any>(sql: string, params?: any[]): T | undefined {
     try {
-      const stmt = this.db.prepare(sql);
+      const stmt: StatementSync = this.db.prepare(sql);
       const result = params ? stmt.get(...params) : stmt.get();
       return result as T | undefined;
     } catch (error) {
@@ -67,12 +50,9 @@ class SQLiteDatabase {
     }
   }
 
-  /**
-   * Execute INSERT/UPDATE/DELETE
-   */
-  run(sql: string, params?: any[]): Database.RunResult {
+  run(sql: string, params?: any[]): RunResult {
     try {
-      const stmt = this.db.prepare(sql);
+      const stmt: StatementSync = this.db.prepare(sql);
       return params ? stmt.run(...params) : stmt.run();
     } catch (error) {
       logger.error("SQLite run error:", { sql, params, error });
@@ -80,32 +60,27 @@ class SQLiteDatabase {
     }
   }
 
-  /**
-   * Execute multiple statements in a transaction
-   */
   transaction<T>(callback: () => T): T {
-    const trans = this.db.transaction(callback);
-    return trans();
+    this.db.exec("BEGIN");
+    try {
+      const result = callback();
+      this.db.exec("COMMIT");
+      return result;
+    } catch (error) {
+      this.db.exec("ROLLBACK");
+      throw error;
+    }
   }
 
-  /**
-   * Get the underlying database instance
-   */
-  getDb(): Database.Database {
+  getDb(): DatabaseSync {
     return this.db;
   }
 
-  /**
-   * Close database connection
-   */
   close(): void {
     this.db.close();
     logger.info("SQLite database closed");
   }
 
-  /**
-   * Health check
-   */
   healthCheck(): boolean {
     try {
       this.db.prepare("SELECT 1").get();
