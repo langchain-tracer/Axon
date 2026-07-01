@@ -3,9 +3,9 @@ import type { TraceSummary } from '../types';
 import { formatCost, formatDuration, formatTokens } from '../lib/format';
 
 const T = {
-  bg: '#0b0d10', surface: '#0f1117', surface2: '#161b27',
-  border: '#1e2535', text: '#f1f5f9', muted: '#94a3b8',
-  faint: '#64748b', vfaint: '#475569',
+  bg: '#0a0e1a', surface: '#171b28', surface2: '#262a37',
+  border: '#434655', text: '#eef0fa', muted: '#9aa1b8',
+  faint: '#d2d6e8', vfaint: '#9aa1b8',
 };
 
 const STATUS = {
@@ -163,7 +163,7 @@ export function TraceList({
                     {(() => {
                       const desc = t.description?.trim();
                       const name = t.projectName?.startsWith('unknown_service') ? '' : t.projectName;
-                      return desc || name || 'unknown_service';
+                      return desc || name || 'No description';
                     })()}
                   </span>
                 </div>
