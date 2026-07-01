@@ -91,15 +91,23 @@ export function deriveDisplay(raw: RawSpan, type: AxonNodeType): DisplayFields {
       return { prompts, response: response ?? "", reasoning: "" };
 
     case "tool": {
+      const resolvedToolName =
+        toolName ??
+        getStringAttr(attrs, "ai.toolCall.name") ??
+        spanName;
       const toolInput =
-        getStringAttr(attrs, "gen_ai.tool.parameters", "tool.input") ?? prompts[0] ?? "";
+        getStringAttr(attrs, "gen_ai.tool.parameters", "tool.input", "ai.toolCall.args") ??
+        prompts[0] ??
+        "";
       const toolOutput =
-        getStringAttr(attrs, "gen_ai.tool.result", "tool.output") ?? response ?? "";
+        getStringAttr(attrs, "gen_ai.tool.result", "tool.output", "ai.toolCall.result") ??
+        response ??
+        "";
       return {
-        prompts: [`Tool: ${toolName ?? spanName}\nInput: ${toolInput}`],
+        prompts: [`Tool: ${resolvedToolName}\nInput: ${toolInput}`],
         response: toolOutput,
         reasoning: "",
-        toolName: toolName ?? spanName,
+        toolName: resolvedToolName,
         toolInput,
         toolOutput,
       };
