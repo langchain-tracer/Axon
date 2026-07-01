@@ -1,37 +1,48 @@
 import { useState } from 'react';
 import type { Span } from '../types';
-import { CopyJsonButton } from './CopyJsonButton';
-import { SpanIcon } from './SpanIcon';
 
-/** Raw OTEL span JSON (data.raw) for every span, pretty-printed, copyable. */
+const T = { surface: '#0f1117', bg: '#0b0d10', border: '#1c2030', text: '#c4d0e8', muted: '#4a5a72' };
+
 export function RawInspector({ nodes }: { nodes: Span[] }) {
-  const [openId, setOpenId] = useState<string | null>(nodes[0]?.id ?? null);
+  const [copied, setCopied] = useState(false);
+  const allRaw = nodes.map(n => n.raw ?? { id: n.id, type: n.type, label: n.label });
+
+  function copy() {
+    navigator.clipboard.writeText(JSON.stringify(allRaw, null, 2));
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }
 
   return (
-    <div className="space-y-2 p-4">
-      {nodes.map((span) => {
-        const open = openId === span.id;
-        return (
-          <div key={span.id} className="rounded-lg border border-slate-800 bg-slate-900/40">
-            <div className="flex items-center justify-between px-3 py-2">
-              <button
-                onClick={() => setOpenId(open ? null : span.id)}
-                className="flex items-center gap-2 text-left"
-              >
-                <SpanIcon type={span.type} error={!!span.error} className="h-3.5 w-3.5" />
-                <span className="text-sm text-slate-200">{span.label}</span>
-                <span className="font-mono text-[11px] text-slate-500">{span.type}</span>
-              </button>
-              {span.raw && <CopyJsonButton value={span.raw} label="Copy raw" />}
-            </div>
-            {open && (
-              <pre className="max-h-[60vh] overflow-auto border-t border-slate-800 px-3 py-2 text-xs text-slate-400">
-                {JSON.stringify(span.raw ?? { note: 'no raw span stored' }, null, 2)}
-              </pre>
-            )}
-          </div>
-        );
-      })}
+    <div style={{ padding: '14px 16px' }}>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 10 }}>
+        <div
+          onClick={copy}
+          style={{
+            display: 'flex', alignItems: 'center', gap: 5,
+            background: T.surface, border: `1px solid ${T.border}`,
+            borderRadius: 5, padding: '5px 12px', cursor: 'pointer',
+            transition: 'border-color 0.15s',
+          }}
+          onMouseEnter={e => (e.currentTarget as HTMLDivElement).style.borderColor = '#3b82f6'}
+          onMouseLeave={e => (e.currentTarget as HTMLDivElement).style.borderColor = T.border}
+        >
+          <svg width="11" height="11" viewBox="0 0 11 11" fill="none">
+            <rect x="0.5" y="2.5" width="7" height="8" rx="1.2" stroke={T.muted} strokeWidth="1.1"/>
+            <rect x="3.5" y="0.5" width="7" height="8" rx="1.2" stroke={T.muted} strokeWidth="1.1"/>
+          </svg>
+          <span style={{ fontSize: 11, color: T.muted }}>{copied ? 'Copied!' : 'Copy JSON'}</span>
+        </div>
+      </div>
+      <pre style={{
+        margin: 0, background: T.surface, border: `1px solid ${T.border}`,
+        borderRadius: 6, padding: '14px 16px',
+        fontFamily: "'JetBrains Mono', monospace", fontSize: 11,
+        lineHeight: 1.7, color: '#7a8da8', overflow: 'auto',
+        maxHeight: 'calc(100vh - 270px)', whiteSpace: 'pre',
+      }}>
+        {JSON.stringify(allRaw, null, 2)}
+      </pre>
     </div>
   );
 }
