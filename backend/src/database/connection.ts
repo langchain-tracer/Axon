@@ -50,12 +50,12 @@ class SQLiteDatabase {
     }
   }
 
-  run(sql: string, params?: any[]): RunResult {
+  run(sql: string, params?: any[], opts?: { silent?: boolean }): RunResult {
     try {
       const stmt: StatementSync = this.db.prepare(sql);
       return params ? stmt.run(...params) : stmt.run();
     } catch (error) {
-      logger.error("SQLite run error:", { sql, params, error });
+      if (!opts?.silent) logger.error("SQLite run error:", { sql, params, error });
       throw error;
     }
   }
