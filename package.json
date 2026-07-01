@@ -20,6 +20,7 @@
     "typescript": "^5.3.3"
   },
   "dependencies": {
+    "@axon-ai/cli": "^1.0.5",
     "@esbuild/win32-x64": "^0.25.11",
     "@rollup/rollup-win32-x64-msvc": "^4.62.0",
     "sqlite": "^5.1.1",
