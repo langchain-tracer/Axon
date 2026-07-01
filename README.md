@@ -10,7 +10,7 @@ Axon is a local observability tool for LangChain and OpenTelemetry-instrumented 
 
 ### Features
 
-**Empty state — shows your OTLP endpoint and integration snippets the moment Axon starts**
+**Overview - shows your OTLP endpoint and integration snippets the moment Axon starts**
 ![Overview](docs/screenshots/overview.png)
 
 ### Trace Views
@@ -196,4 +196,4 @@ When making changes, run `npm test` to execute the test suite before submitting 
 
 ## License
 
-MIT
+This project is licensed under the [MIT License](LICENSE).
