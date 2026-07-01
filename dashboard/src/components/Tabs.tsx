@@ -1,34 +1,38 @@
-// Minimal tab strip — no external UI lib.
+const T = { surface: '#0f1117', border: '#1c2030', text: '#c4d0e8', muted: '#4a5a72' };
 
-export interface Tab {
-  id: string;
-  label: string;
-}
+export interface Tab { id: string; label: string; }
 
 export function Tabs({
-  tabs,
-  active,
-  onChange,
+  tabs, active, onChange,
 }: {
   tabs: Tab[];
   active: string;
   onChange: (id: string) => void;
 }) {
   return (
-    <div className="flex gap-1 border-b border-slate-800">
-      {tabs.map((t) => (
-        <button
-          key={t.id}
-          onClick={() => onChange(t.id)}
-          className={`-mb-px border-b-2 px-3 py-2 text-sm font-medium transition-colors ${
-            active === t.id
-              ? 'border-violet-400 text-white'
-              : 'border-transparent text-slate-400 hover:text-slate-200'
-          }`}
-        >
-          {t.label}
-        </button>
-      ))}
+    <div style={{
+      display: 'flex', background: T.surface,
+      borderBottom: `1px solid ${T.border}`,
+      flexShrink: 0, padding: '0 8px',
+    }}>
+      {tabs.map(tab => {
+        const isActive = tab.id === active;
+        return (
+          <div
+            key={tab.id}
+            onClick={() => onChange(tab.id)}
+            style={{
+              padding: '9px 12px', fontSize: 12, cursor: 'pointer',
+              color: isActive ? T.text : T.muted,
+              borderBottom: isActive ? '2px solid #3b82f6' : '2px solid transparent',
+              transition: 'color 0.15s, border-color 0.15s',
+              userSelect: 'none',
+            }}
+          >
+            {tab.label}
+          </div>
+        );
+      })}
     </div>
   );
 }
