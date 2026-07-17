@@ -19,7 +19,7 @@ Axon is a local observability tool for LangChain and OpenTelemetry-instrumented 
 ![Transcript](docs/screenshots/transcript.png)
 
 **Waterfall — each span as a horizontal bar on a shared time axis with a detail panel**
-![Waterfall](docs/screenshots/wateerfall.png)
+![Waterfall](docs/screenshots/waterfall.png)
 
 **Tree — parent-child span hierarchy with type icons, model names, and token counts**
 ![Tree](docs/screenshots/tree.png)
@@ -31,7 +31,7 @@ Axon is a local observability tool for LangChain and OpenTelemetry-instrumented 
 
 ## How it works
 
-Axon runs entirely on your machine. When you start it, a single server comes up that handles two responsibilities: it accepts incoming OTLP trace data from your application, and it serves the dashboard that visualises those traces. The server writes all trace data to a local SQLite database scoped to your project directory. The dashboard connects to the server over WebSocket so new spans appear in real time as your agent runs.
+Axon runs entirely on your machine. When you start it, a single server comes up that handles two responsibilities: it accepts incoming OTLP trace data from your application, and it serves the dashboard that visualises those traces. The server writes all trace data to a local SQLite database scoped to your project directory. The dashboard connects to the server over Server-Sent Events so new spans appear in real time as your agent runs.
 
 The tool is distributed as three packages that work together. `@axon-ai/cli` is the command-line interface you interact with. `@axon-ai/backend` is the Express server and database layer. `@axon-ai/dashboard` is the React web interface. When you install the CLI, it bundles the other two so you only need one install.
 
